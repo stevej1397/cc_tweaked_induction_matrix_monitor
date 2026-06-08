@@ -6,7 +6,7 @@
 -- Falls back to a clear error if PixelUI / shrekbox aren't installed yet
 -- (run 'update' to fetch them).
 
-local SETUP_VERSION = "0.4.2"
+local SETUP_VERSION = "0.4.3"
 
 -- Quick version banner so we can tell whether 'update' actually replaced
 -- this file on the computer. If you see this banner, you have at least
@@ -194,12 +194,11 @@ end
 local function buildPeripheralStep(opts)
     local frame = newStepFrame()
     local INNER_W = CONTENT_W - 4
+
+    -- Help / description (the step indicator at the top of the screen already
+    -- says "Step N/7 -- <step name>", so we don't repeat that here).
     frame:addChild(mkLabel({
-        x = 2, y = 1, width = INNER_W, text = opts.title,
-        fg = colors.cyan, bg = colors.black,
-    }))
-    frame:addChild(mkLabel({
-        x = 2, y = 2, width = INNER_W, text = opts.help or "",
+        x = 2, y = 1, width = INNER_W, text = opts.help or "",
         fg = colors.lightGray, bg = colors.black,
     }))
 
@@ -207,15 +206,22 @@ local function buildPeripheralStep(opts)
     for _, name in ipairs(opts.candidates) do items[#items + 1] = name end
     if #items == 0 then
         frame:addChild(mkLabel({
-            x = 2, y = 5, width = INNER_W,
+            x = 2, y = 3, width = INNER_W,
             text = "(no candidates detected -- check wiring)",
             fg = colors.red, bg = colors.black,
         }))
         return frame, function() return nil end
     end
 
+    -- "Choose:" prompt above the dropdown
+    frame:addChild(mkLabel({
+        x = 2, y = 3, width = INNER_W, text = "Choose:",
+        fg = colors.white, bg = colors.black,
+    }))
+
+    -- Info label below the dropdown shows ONLY metadata (no name duplication)
     local infoLabel = mkLabel({
-        x = 2, y = 7, width = INNER_W, text = "",
+        x = 2, y = 6, width = INNER_W, text = "",
         fg = colors.lightGray, bg = colors.black,
     })
 
@@ -227,8 +233,16 @@ local function buildPeripheralStep(opts)
         end
     end
 
+    local function describe(name)
+        if not name or not opts.describer then return "" end
+        local d = opts.describer(name)
+        if not d or d == "" then return "" end
+        -- describer returns "  (60.0% full)" etc -- strip leading whitespace
+        return "Currently selected: " .. (d:gsub("^%s+", ""))
+    end
+
     local cb = app:createComboBox({
-        x = 2, y = 5, width = CONTENT_W - 4,
+        x = 2, y = 4, width = INNER_W,
         items = items,
         selectedIndex = startIdx,
         bg = colors.gray, fg = colors.white,
@@ -237,7 +251,7 @@ local function buildPeripheralStep(opts)
         onChange = function(self, index)
             local name = opts.candidates[index]
             opts.onPick(name)
-            infoLabel:setText(opts.describer and (name .. opts.describer(name)) or name)
+            infoLabel:setText(describe(name))
         end,
     })
     frame:addChild(cb)
@@ -246,7 +260,7 @@ local function buildPeripheralStep(opts)
     -- Apply initial pick
     local picked = opts.candidates[startIdx]
     opts.onPick(picked)
-    infoLabel:setText(opts.describer and (picked .. opts.describer(picked)) or picked)
+    infoLabel:setText(describe(picked))
 
     return frame, function() return cb:getSelectedItem() end
 end
@@ -287,11 +301,6 @@ local function buildOutputsStep(stepIdx, title, list_ref)
 
     frame:addChild(mkLabel({
         x = 2, y = 1, width = INNER_W,
-        text = string.format("Step %d/%d: %s", stepIdx, NUM_STEPS, title),
-        fg = colors.cyan, bg = colors.black,
-    }))
-    frame:addChild(mkLabel({
-        x = 2, y = 2, width = INNER_W,
         text = "Computer emits redstone on every output when gate is OPEN.",
         fg = colors.lightGray, bg = colors.black,
     }))
@@ -306,6 +315,10 @@ local function buildOutputsStep(stepIdx, title, list_ref)
         outputList:setItems(items)
     end
 
+    frame:addChild(mkLabel({
+        x = 2, y = 3, width = INNER_W, text = "Current outputs:",
+        fg = colors.white, bg = colors.black,
+    }))
     outputList = app:createList({
         x = 2, y = 4, width = CONTENT_W - 4, height = 5,
         items = {},
@@ -382,18 +395,13 @@ local step5 = buildOutputsStep(5, "General -> Sink gate outputs",
 -- ============================================================
 local step6 = newStepFrame()
 local STEP6_W = CONTENT_W - 4
-step6:addChild(mkLabel({
-    x = 2, y = 1, width = STEP6_W,
-    text = "Step 6/" .. NUM_STEPS .. ": Polarity & thresholds",
-    fg = colors.cyan, bg = colors.black,
-}))
 
 step6:addChild(mkLabel({
-    x = 2, y = 3, width = STEP6_W, text = "Redstone polarity:",
+    x = 2, y = 1, width = STEP6_W, text = "Redstone polarity:",
     fg = colors.white, bg = colors.black,
 }))
 local radioHigh = app:createRadioButton({
-    x = 4, y = 4, label = "High opens (recommended)",
+    x = 4, y = 2, label = "High opens (recommended)",
     group = "polarity", value = "high_opens",
     selected = state.polarity == "high_opens",
     fg = colors.white, bg = colors.black,
@@ -402,7 +410,7 @@ local radioHigh = app:createRadioButton({
     end,
 })
 local radioLow = app:createRadioButton({
-    x = 4, y = 5, label = "Low opens",
+    x = 4, y = 3, label = "Low opens",
     group = "polarity", value = "low_opens",
     selected = state.polarity == "low_opens",
     fg = colors.white, bg = colors.black,
@@ -414,7 +422,7 @@ step6:addChild(radioHigh)
 step6:addChild(radioLow)
 
 step6:addChild(mkLabel({
-    x = 2, y = 7, width = STEP6_W, text = "Gate thresholds (open / close):",
+    x = 2, y = 5, width = STEP6_W, text = "Gate thresholds (open / close):",
     fg = colors.white, bg = colors.black,
 }))
 
@@ -434,17 +442,17 @@ local function thresholdRow(y, label, getter, setter)
     step6:addChild(slider)
 end
 
-thresholdRow(8,  "critical open:",  function() return state.critical_open_pct end,
+thresholdRow(6,  "critical open:",  function() return state.critical_open_pct end,
     function(v) state.critical_open_pct = v end)
-thresholdRow(9,  "critical close:", function() return state.critical_close_pct end,
+thresholdRow(7,  "critical close:", function() return state.critical_close_pct end,
     function(v) state.critical_close_pct = v end)
-thresholdRow(10, "general open:",   function() return state.general_open_pct end,
+thresholdRow(8,  "general open:",   function() return state.general_open_pct end,
     function(v) state.general_open_pct = v end)
-thresholdRow(11, "general close:",  function() return state.general_close_pct end,
+thresholdRow(9,  "general close:",  function() return state.general_close_pct end,
     function(v) state.general_close_pct = v end)
 
 step6:addChild(mkLabel({
-    x = 2, y = 13, width = STEP6_W,
+    x = 2, y = 11, width = STEP6_W,
     text = "(close must be <= open for each gate)",
     fg = colors.gray, bg = colors.black,
 }))
@@ -454,16 +462,11 @@ step6:addChild(mkLabel({
 -- ============================================================
 local step7 = newStepFrame()
 local STEP7_W = CONTENT_W - 4
-step7:addChild(mkLabel({
-    x = 2, y = 1, width = STEP7_W,
-    text = "Step 7/" .. NUM_STEPS .. ": Confirm & save",
-    fg = colors.cyan, bg = colors.black,
-}))
 
 local summaryLabels = {}
 for i = 1, 12 do
     local l = mkLabel({
-        x = 2, y = 2 + i, width = STEP7_W, text = "",
+        x = 2, y = i, width = STEP7_W, text = "",
         fg = colors.white, bg = colors.black,
     })
     step7:addChild(l)
