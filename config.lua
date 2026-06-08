@@ -48,4 +48,9 @@ return {
     text_scale     = 0.5,
     critical_color = colors.lime,
     general_color  = colors.cyan,
+
+    -- Power unit shown on the monitor. One of: "J", "FE", "RF", "EU".
+    -- (Mekanism stores power in Joules natively; the others use Mekanism's
+    -- default conversion ratios -- 1 FE/RF = 2.5 J, 1 EU = 25 J.)
+    energy_unit    = "J",
 }

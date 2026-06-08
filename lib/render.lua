@@ -156,6 +156,8 @@ function M:draw_stats(critical, general, gates)
 
     local r_start = self.regions.stats_start + 1
 
+    local unit = self.cfg.energy_unit or "J"
+
     local function side(x0, data, fill_color)
         local row = make_row(m, x0, col_w)
         if not data then
@@ -167,8 +169,8 @@ function M:draw_stats(critical, general, gates)
             end
             return
         end
-        row(r_start,     "Energy:",   util.format_energy(data.energy), colors.white)
-        row(r_start + 1, "Capacity:", util.format_energy(data.max), colors.lightGray)
+        row(r_start,     "Energy:",   util.format_energy(data.energy, unit), colors.white)
+        row(r_start + 1, "Capacity:", util.format_energy(data.max, unit), colors.lightGray)
         row(r_start + 2, "Fill:",     util.format_pct(data.fill), colors.white)
         -- Fill bar on row + 3
         m.setBackgroundColor(colors.black)
@@ -181,8 +183,8 @@ function M:draw_stats(critical, general, gates)
         m.setCursorPos(x0 + col_w - 1, r_start + 3)
         m.write("]")
 
-        row(r_start + 4, "Input:",  util.format_rate_per_sec(data.input), colors.green)
-        row(r_start + 5, "Output:", util.format_rate_per_sec(data.output), colors.orange)
+        row(r_start + 4, "Input:",  util.format_rate_per_sec(data.input, unit), colors.green)
+        row(r_start + 5, "Output:", util.format_rate_per_sec(data.output, unit), colors.orange)
         row(r_start + 6, "ETA:",    util.format_eta(data.energy, data.max, data.net),
             data.net >= 0 and colors.green or colors.orange)
     end

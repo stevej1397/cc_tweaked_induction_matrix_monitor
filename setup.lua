@@ -6,7 +6,7 @@
 -- Falls back to a clear error if PixelUI / shrekbox aren't installed yet
 -- (run 'update' to fetch them).
 
-local SETUP_VERSION = "0.4.4"
+local SETUP_VERSION = "0.5.0"
 
 -- Quick version banner so we can tell whether 'update' actually replaced
 -- this file on the computer. If you see this banner, you have at least
@@ -29,6 +29,7 @@ if not ok_pix then
 end
 
 local peripherals_lib = require("lib.peripherals")
+local util = require("lib.util")
 
 -- ============================================================
 -- Peripheral discovery
@@ -110,6 +111,8 @@ local state = {
     general_open_pct   = math.floor((existing.general_open_at   or 0.90) * 100 + 0.5),
     general_close_pct  = math.floor((existing.general_close_at  or 0.85) * 100 + 0.5),
 
+    energy_unit = existing.energy_unit or "J",
+
     cancelled = false,
     saved = false,
 }
@@ -161,6 +164,7 @@ local STEP_NAMES = {
     "Critical -> General outputs",
     "General -> Sink outputs",
     "Polarity & thresholds",
+    "Display unit",
     "Confirm & save",
 }
 local NUM_STEPS = #STEP_NAMES
@@ -486,18 +490,68 @@ local function readThresholdInputs()
 end
 
 -- ============================================================
--- Step 7: confirm & save
+-- Step 7: power unit on the monitor
 -- ============================================================
 local step7 = newStepFrame()
 local STEP7_W = CONTENT_W - 4
 
+step7:addChild(mkLabel({
+    x = 2, y = 1, width = STEP7_W,
+    text = "Power unit shown on the monitor:",
+    fg = colors.white, bg = colors.black,
+}))
+
+local UNIT_OPTIONS = {
+    {value = "J",  label = "J  - Joules (Mekanism native)"},
+    {value = "FE", label = "FE - Forge Energy"},
+    {value = "RF", label = "RF - Redstone Flux (= FE)"},
+    {value = "EU", label = "EU - Industrial Craft 2"},
+}
+
+local unitPreview = mkLabel({
+    x = 2, y = 8, width = STEP7_W, text = "",
+    fg = colors.lightGray, bg = colors.black,
+})
+
+local function refresh_unit_preview()
+    -- 5.20 GJ is a representative induction-matrix capacity.
+    local sample = 5.2e9
+    unitPreview:setText(string.format(
+        "Preview: %s capacity, %s/s in",
+        util.format_energy(sample, state.energy_unit),
+        util.format_energy(1.2e6, state.energy_unit)))
+end
+
+for i, opt in ipairs(UNIT_OPTIONS) do
+    step7:addChild(app:createRadioButton({
+        x = 4, y = 1 + i, label = opt.label,
+        group = "energy_unit", value = opt.value,
+        selected = state.energy_unit == opt.value,
+        fg = colors.white, bg = colors.black,
+        onChange = function(self, sel)
+            if sel then
+                state.energy_unit = opt.value
+                refresh_unit_preview()
+            end
+        end,
+    }))
+end
+step7:addChild(unitPreview)
+refresh_unit_preview()
+
+-- ============================================================
+-- Step 8: confirm & save
+-- ============================================================
+local step8 = newStepFrame()
+local STEP8_W = CONTENT_W - 4
+
 local summaryLabels = {}
 for i = 1, 12 do
     local l = mkLabel({
-        x = 2, y = i, width = STEP7_W, text = "",
+        x = 2, y = i, width = STEP8_W, text = "",
         fg = colors.white, bg = colors.black,
     })
-    step7:addChild(l)
+    step8:addChild(l)
     summaryLabels[i] = l
 end
 
@@ -521,15 +575,16 @@ local function refreshSummary()
         state.critical_open_pct, state.critical_close_pct))
     summaryLabels[8]:setText(string.format("General gate    : open >= %d%%, close <= %d%%",
         state.general_open_pct, state.general_close_pct))
-    summaryLabels[9]:setText("")
-    summaryLabels[10]:setText("Click Save to write config.lua and exit.")
-    summaryLabels[11]:setText("(existing config.lua will be backed up to config.lua.bak)")
+    summaryLabels[9]:setText("Display unit    : " .. tostring(state.energy_unit))
+    summaryLabels[10]:setText("")
+    summaryLabels[11]:setText("Click Save to write config.lua and exit.")
+    summaryLabels[12]:setText("(existing config.lua will be backed up to config.lua.bak)")
 end
 
 -- ============================================================
 -- Step registry + navigation
 -- ============================================================
-local steps = {step1, step2, step3, step4, step5, step6, step7}
+local steps = {step1, step2, step3, step4, step5, step6, step7, step8}
 local currentStep = 1
 
 local function validateStep(n)
@@ -691,6 +746,9 @@ return {
     text_scale     = %s,
     critical_color = colors.lime,
     general_color  = colors.cyan,
+
+    -- "J", "FE", "RF", or "EU"
+    energy_unit    = %s,
 }
 ]],
     fmt_str(state.critical),
@@ -706,7 +764,8 @@ return {
     existing.live_interval or 2,
     existing.history_interval or 30,
     existing.history_max_samples or 1440,
-    existing.text_scale or 0.5
+    existing.text_scale or 0.5,
+    fmt_str(state.energy_unit)
 )
 
 if fs.exists("config.lua") then

@@ -1,22 +1,43 @@
 local M = {}
 
-local ENERGY_UNITS = {"J", "kJ", "MJ", "GJ", "TJ", "PJ", "EJ", "ZJ"}
+-- Mekanism's native unit is Joules. These are the multipliers it uses
+-- internally when converting (you can verify in /config/mekanism-common.toml
+-- under "config.general.energyConversionRate" -- defaults below).
+M.UNIT_FACTORS = {
+    J  = 1,
+    FE = 0.4,    -- 1 J = 0.4 FE  (i.e. 1 FE = 2.5 J)
+    RF = 0.4,    -- Forge Energy and Redstone Flux share the rate
+    EU = 0.04,   -- 1 J = 0.04 EU (i.e. 1 EU = 25 J)
+}
 
-function M.format_energy(j)
-    if j == nil then return "?" end
+local PREFIXES = {"", "k", "M", "G", "T", "P", "E", "Z"}
+
+local function scale(value)
     local sign = ""
-    if j < 0 then sign = "-"; j = -j end
+    if value < 0 then sign = "-"; value = -value end
     local i = 1
-    while j >= 1000 and i < #ENERGY_UNITS do
-        j = j / 1000
+    while value >= 1000 and i < #PREFIXES do
+        value = value / 1000
         i = i + 1
     end
-    return string.format("%s%.2f %s", sign, j, ENERGY_UNITS[i])
+    return sign, value, PREFIXES[i]
 end
 
-function M.format_rate_per_sec(j_per_tick)
+function M.unit_factor(unit)
+    return M.UNIT_FACTORS[unit] or 1
+end
+
+function M.format_energy(j, unit)
+    if j == nil then return "?" end
+    unit = unit or "J"
+    local converted = j * M.unit_factor(unit)
+    local sign, value, prefix = scale(converted)
+    return string.format("%s%.2f %s%s", sign, value, prefix, unit)
+end
+
+function M.format_rate_per_sec(j_per_tick, unit)
     if j_per_tick == nil then return "?" end
-    return M.format_energy(j_per_tick * 20) .. "/s"
+    return M.format_energy(j_per_tick * 20, unit) .. "/s"
 end
 
 function M.format_pct(fill)
