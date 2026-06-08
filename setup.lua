@@ -114,14 +114,23 @@ local app = pixelui.create({background = colors.gray})
 local root = app:getRoot()
 local SW, SH = app.window.getSize()
 
+-- Helper: PixelUI Labels default to width=1 (which wraps text vertically),
+-- so always pass an explicit width. wrap=false keeps single-line.
+local function mkLabel(opts)
+    opts.width = opts.width or (SW - opts.x - 1)
+    opts.height = opts.height or 1
+    if opts.wrap == nil then opts.wrap = false end
+    return app:createLabel(opts)
+end
+
 -- Title bar (row 1)
-root:addChild(app:createLabel({
+root:addChild(mkLabel({
     x = 2, y = 1, text = "Induction Matrix Monitor - Setup",
     fg = colors.white, bg = colors.gray,
 }))
 
 -- Step indicator (row 2)
-local stepLabel = app:createLabel({
+local stepLabel = mkLabel({
     x = 2, y = 2, text = "",
     fg = colors.lightGray, bg = colors.gray,
 })
@@ -154,7 +163,7 @@ local function newStepFrame()
 end
 
 -- Status / error label (row SH-1)
-local statusLabel = app:createLabel({
+local statusLabel = mkLabel({
     x = 2, y = SH - 1, text = "",
     fg = colors.yellow, bg = colors.gray,
 })
@@ -170,25 +179,29 @@ end
 -- ============================================================
 local function buildPeripheralStep(opts)
     local frame = newStepFrame()
-    frame:addChild(app:createLabel({
-        x = 2, y = 1, text = opts.title, fg = colors.cyan, bg = colors.black,
+    local INNER_W = CONTENT_W - 4
+    frame:addChild(mkLabel({
+        x = 2, y = 1, width = INNER_W, text = opts.title,
+        fg = colors.cyan, bg = colors.black,
     }))
-    frame:addChild(app:createLabel({
-        x = 2, y = 2, text = opts.help or "", fg = colors.lightGray, bg = colors.black,
+    frame:addChild(mkLabel({
+        x = 2, y = 2, width = INNER_W, text = opts.help or "",
+        fg = colors.lightGray, bg = colors.black,
     }))
 
     local items = {}
     for _, name in ipairs(opts.candidates) do items[#items + 1] = name end
     if #items == 0 then
-        frame:addChild(app:createLabel({
-            x = 2, y = 5, text = "(no candidates detected -- check wiring)",
+        frame:addChild(mkLabel({
+            x = 2, y = 5, width = INNER_W,
+            text = "(no candidates detected -- check wiring)",
             fg = colors.red, bg = colors.black,
         }))
         return frame, function() return nil end
     end
 
-    local infoLabel = app:createLabel({
-        x = 2, y = 7, text = "",
+    local infoLabel = mkLabel({
+        x = 2, y = 7, width = INNER_W, text = "",
         fg = colors.lightGray, bg = colors.black,
     })
 
@@ -256,13 +269,16 @@ local step3 = buildPeripheralStep({
 -- ============================================================
 local function buildOutputsStep(stepIdx, title, list_ref)
     local frame = newStepFrame()
+    local INNER_W = CONTENT_W - 4
 
-    frame:addChild(app:createLabel({
-        x = 2, y = 1, text = string.format("Step %d/%d: %s", stepIdx, NUM_STEPS, title),
+    frame:addChild(mkLabel({
+        x = 2, y = 1, width = INNER_W,
+        text = string.format("Step %d/%d: %s", stepIdx, NUM_STEPS, title),
         fg = colors.cyan, bg = colors.black,
     }))
-    frame:addChild(app:createLabel({
-        x = 2, y = 2, text = "Computer emits redstone on every output when gate is OPEN.",
+    frame:addChild(mkLabel({
+        x = 2, y = 2, width = INNER_W,
+        text = "Computer emits redstone on every output when gate is OPEN.",
         fg = colors.lightGray, bg = colors.black,
     }))
 
@@ -285,8 +301,9 @@ local function buildOutputsStep(stepIdx, title, list_ref)
     frame:addChild(outputList)
 
     -- "Add output" row
-    frame:addChild(app:createLabel({
-        x = 2, y = 10, text = "Add:", fg = colors.lightGray, bg = colors.black,
+    frame:addChild(mkLabel({
+        x = 2, y = 10, width = 4, text = "Add:",
+        fg = colors.lightGray, bg = colors.black,
     }))
 
     local periphCb = app:createComboBox({
@@ -350,13 +367,15 @@ local step5 = buildOutputsStep(5, "General -> Sink gate outputs",
 -- Step 6: polarity + thresholds
 -- ============================================================
 local step6 = newStepFrame()
-step6:addChild(app:createLabel({
-    x = 2, y = 1, text = "Step 6/" .. NUM_STEPS .. ": Polarity & thresholds",
+local STEP6_W = CONTENT_W - 4
+step6:addChild(mkLabel({
+    x = 2, y = 1, width = STEP6_W,
+    text = "Step 6/" .. NUM_STEPS .. ": Polarity & thresholds",
     fg = colors.cyan, bg = colors.black,
 }))
 
-step6:addChild(app:createLabel({
-    x = 2, y = 3, text = "Redstone polarity:",
+step6:addChild(mkLabel({
+    x = 2, y = 3, width = STEP6_W, text = "Redstone polarity:",
     fg = colors.white, bg = colors.black,
 }))
 local radioHigh = app:createRadioButton({
@@ -380,14 +399,15 @@ local radioLow = app:createRadioButton({
 step6:addChild(radioHigh)
 step6:addChild(radioLow)
 
-step6:addChild(app:createLabel({
-    x = 2, y = 7, text = "Gate thresholds (open / close):",
+step6:addChild(mkLabel({
+    x = 2, y = 7, width = STEP6_W, text = "Gate thresholds (open / close):",
     fg = colors.white, bg = colors.black,
 }))
 
 local function thresholdRow(y, label, getter, setter)
-    step6:addChild(app:createLabel({
-        x = 2, y = y, text = label, fg = colors.lightGray, bg = colors.black,
+    step6:addChild(mkLabel({
+        x = 2, y = y, width = 14, text = label,
+        fg = colors.lightGray, bg = colors.black,
     }))
     local slider = app:createSlider({
         x = 16, y = y, width = CONTENT_W - 22,
@@ -409,8 +429,9 @@ thresholdRow(10, "general open:",   function() return state.general_open_pct end
 thresholdRow(11, "general close:",  function() return state.general_close_pct end,
     function(v) state.general_close_pct = v end)
 
-step6:addChild(app:createLabel({
-    x = 2, y = 13, text = "(close must be <= open for each gate)",
+step6:addChild(mkLabel({
+    x = 2, y = 13, width = STEP6_W,
+    text = "(close must be <= open for each gate)",
     fg = colors.gray, bg = colors.black,
 }))
 
@@ -418,15 +439,17 @@ step6:addChild(app:createLabel({
 -- Step 7: confirm & save
 -- ============================================================
 local step7 = newStepFrame()
-step7:addChild(app:createLabel({
-    x = 2, y = 1, text = "Step 7/" .. NUM_STEPS .. ": Confirm & save",
+local STEP7_W = CONTENT_W - 4
+step7:addChild(mkLabel({
+    x = 2, y = 1, width = STEP7_W,
+    text = "Step 7/" .. NUM_STEPS .. ": Confirm & save",
     fg = colors.cyan, bg = colors.black,
 }))
 
 local summaryLabels = {}
 for i = 1, 12 do
-    local l = app:createLabel({
-        x = 2, y = 2 + i, text = "",
+    local l = mkLabel({
+        x = 2, y = 2 + i, width = STEP7_W, text = "",
         fg = colors.white, bg = colors.black,
     })
     step7:addChild(l)
