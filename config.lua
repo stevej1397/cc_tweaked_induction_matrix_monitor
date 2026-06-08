@@ -1,39 +1,46 @@
 -- ============================================================
--- Induction Matrix Monitor configuration
--- Edit the values below to match your wiring, then reboot.
+-- Induction Matrix Monitor configuration (defaults).
+-- Run 'setup' to generate this interactively, or edit by hand.
 -- ============================================================
 return {
     -- ---- Peripheral names ----
-    -- Use `peripherals` at a shell prompt to list connected peripherals.
-    -- These are the network names assigned by wired modems.
+    -- Run `peripherals` at a shell prompt to list connected names.
     critical_matrix = "inductionPort_0",
     general_matrix  = "inductionPort_1",
     monitor         = "monitor_0",
 
-    -- ---- Redstone gate sides ----
-    -- Sides on the computer block where the redstone signal is emitted.
-    -- Valid values: "top", "bottom", "left", "right", "front", "back".
-    -- Set to nil to disable that gate (e.g. for testing).
-    critical_to_general_side = "left",
-    general_to_sink_side     = "right",
+    -- ---- Redstone outputs ----
+    -- Each gate is a *list* of outputs. Every entry receives the redstone
+    -- signal when the gate should be OPEN.  Mix and match the computer
+    -- itself with any number of Redstone Relay sides.
+    --
+    --   peripheral = "computer"          -> uses redstone.setOutput(side, ...)
+    --   peripheral = "redstone_relay"    -> calls setOutput on that relay
+    --
+    -- Set to {} to disable a gate.
+    critical_to_general_outputs = {
+        {peripheral = "computer", side = "left"},
+    },
+    general_to_sink_outputs = {
+        {peripheral = "computer", side = "right"},
+    },
 
     -- ---- Gate polarity ----
-    -- "high_opens": redstone signal HIGH = gate open (recommended; failsafe)
-    -- "low_opens":  redstone signal LOW  = gate open
-    -- Wire Mekanism cables with Configurator -> Redstone mode = High.
+    -- "high_opens": redstone HIGH = gate open (recommended; failsafe)
+    -- "low_opens" : redstone LOW  = gate open
+    -- Pair with Mekanism cable Configurator -> Redstone mode = High (or Low).
     gate_signal = "high_opens",
 
-    -- ---- Gate thresholds (fraction 0..1) ----
-    -- A gate opens when fill >= open_at and closes when fill <= close_at.
-    -- The gap between them is hysteresis to prevent rapid flapping.
+    -- ---- Gate thresholds (fractions 0..1) ----
+    -- Opens when fill >= open_at, closes when fill <= close_at.
     critical_open_at  = 0.75,
     critical_close_at = 0.70,
     general_open_at   = 0.90,
     general_close_at  = 0.85,
 
     -- ---- Sampling ----
-    live_interval        = 2,    -- seconds between live readouts and redstone updates
-    history_interval     = 30,   -- seconds between history samples
+    live_interval        = 2,    -- seconds between live readouts + gate updates
+    history_interval     = 30,   -- seconds between persisted history samples
     history_max_samples  = 1440, -- 1440 * 30s = 12h
     history_path         = "/history.dat",
 

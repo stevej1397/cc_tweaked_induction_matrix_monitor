@@ -84,19 +84,31 @@ else
     fail("monitor: " .. err3)
 end
 
--- Redstone sides
-local function check_side(name, key)
-    local s = config[key]
-    if not s then
-        info(name .. ": disabled in config")
-    elseif peripherals_lib.valid_side(s) then
-        ok(name .. ": " .. s)
-    else
-        fail(name .. ": invalid side '" .. tostring(s) .. "'")
+-- Redstone outputs (new multi-output schema, plus legacy fallback)
+local function check_outputs(label, list_key, legacy_key)
+    local spec = config[list_key] or config[legacy_key]
+    local outputs = peripherals_lib.compile_outputs(spec)
+    if #outputs == 0 then
+        info(label .. ": disabled (no outputs)")
+        return
+    end
+    for i, o in ipairs(outputs) do
+        local side_ok = peripherals_lib.valid_side(o.side)
+        local target_ok = (o.peripheral == "computer") or peripheral.isPresent(o.peripheral)
+        local desc = string.format("%s [#%d]: %s side=%s",
+            label, i, tostring(o.peripheral or "?"), tostring(o.side or "?"))
+        if side_ok and target_ok then
+            ok(desc)
+        else
+            local why = {}
+            if not target_ok then why[#why + 1] = "peripheral not present" end
+            if not side_ok then why[#why + 1] = "invalid side" end
+            fail(desc .. "  (" .. table.concat(why, ", ") .. ")")
+        end
     end
 end
-check_side("redstone (critical -> general)", "critical_to_general_side")
-check_side("redstone (general -> sink)", "general_to_sink_side")
+check_outputs("critical -> general", "critical_to_general_outputs", "critical_to_general_side")
+check_outputs("general  -> sink",    "general_to_sink_outputs",    "general_to_sink_side")
 
 -- Thresholds
 local function check_thresh(label, open_at, close_at)

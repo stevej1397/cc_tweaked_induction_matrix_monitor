@@ -1,8 +1,11 @@
--- Interactive configurator. Detects induction matrices and monitors,
--- asks which is which, asks for redstone sides + polarity + thresholds,
--- and writes a fresh config.lua.
+-- Interactive configurator. Detects induction matrices, monitors and
+-- redstone-output peripherals (relays/integrators), asks which is which,
+-- collects per-gate output lists (computer side + any/all relay sides),
+-- polarity, and thresholds, and writes a fresh config.lua.
 --
 -- Safe to run repeatedly; existing config.lua is backed up to config.lua.bak.
+
+local peripherals_lib = require("lib.peripherals")
 
 local function header(s)
     term.setTextColor(colors.cyan); print(s); term.setTextColor(colors.white)
@@ -105,16 +108,85 @@ end
 
 local VALID_SIDES = {top=true, bottom=true, left=true, right=true, front=true, back=true}
 
-local function pick_side(label, current)
-    print("")
-    header(label)
-    info("valid sides: top, bottom, left, right, front, back")
-    info("enter 'none' to leave this gate disabled")
+local function ask_side(prompt_label)
     while true do
-        local answer = prompt("  side", current or "none")
-        if answer == nil or answer == "none" or answer == "" then return nil end
+        local answer = prompt(prompt_label or "  side (top/bottom/left/right/front/back)", nil)
+        if answer == nil or answer == "" then return nil end
         if VALID_SIDES[answer] then return answer end
         warn("not a valid side")
+    end
+end
+
+local function format_output(o)
+    return string.format("%s side=%s", o.peripheral or "computer", o.side or "?")
+end
+
+local function pick_outputs(label, current, relays)
+    print("")
+    header(label)
+    info("Add as many outputs as you want -- the computer will emit a redstone")
+    info("signal on every one of them when this gate should be OPEN.")
+    info("Pick the computer side, any relay side(s), or any mix.")
+
+    -- Copy starting outputs (in case user cancels mid-edit, original is preserved)
+    local outputs = {}
+    if current then
+        for _, o in ipairs(current) do
+            outputs[#outputs + 1] = {peripheral = o.peripheral or "computer", side = o.side}
+        end
+    end
+
+    while true do
+        print("")
+        info("Current outputs for this gate:")
+        if #outputs == 0 then
+            info("  (none -- this gate will be disabled)")
+        else
+            for i, o in ipairs(outputs) do
+                info(string.format("  [%d] %s", i, format_output(o)))
+            end
+        end
+
+        print("")
+        info("Add an output:")
+        info("  [c]      computer side")
+        for i, name in ipairs(relays) do
+            info(string.format("  [%d]      %s", i, name))
+        end
+        if #outputs > 0 then
+            info("  [r<N>]   remove output number N  (e.g. r1)")
+        end
+        info("  [done]   finish")
+
+        local answer = prompt("  choice", "done")
+        if answer == nil or answer == "done" or answer == "" then
+            return outputs
+        elseif answer == "c" or answer == "C" then
+            local side = ask_side("  side on computer (top/bottom/left/right/front/back)")
+            if side then
+                outputs[#outputs + 1] = {peripheral = "computer", side = side}
+                info("added: " .. format_output(outputs[#outputs]))
+            end
+        elseif answer:sub(1, 1) == "r" or answer:sub(1, 1) == "R" then
+            local n = tonumber(answer:sub(2))
+            if n and outputs[n] then
+                local removed = table.remove(outputs, n)
+                info("removed: " .. format_output(removed))
+            else
+                warn("no output #" .. tostring(answer:sub(2)))
+            end
+        else
+            local n = tonumber(answer)
+            if n and relays[n] then
+                local side = ask_side("  side on " .. relays[n])
+                if side then
+                    outputs[#outputs + 1] = {peripheral = relays[n], side = side}
+                    info("added: " .. format_output(outputs[#outputs]))
+                end
+            else
+                warn("not recognized")
+            end
+        end
     end
 end
 
@@ -158,9 +230,10 @@ print("")
 
 local matrix_candidates = find_candidates(is_matrix)
 local monitor_candidates = find_candidates(is_monitor)
+local relay_candidates = peripherals_lib.find_redstone_outputs()
 
-info(string.format("found %d induction matrix port(s), %d monitor(s)",
-    #matrix_candidates, #monitor_candidates))
+info(string.format("found %d induction matrix port(s), %d monitor(s), %d redstone-output peripheral(s)",
+    #matrix_candidates, #monitor_candidates, #relay_candidates))
 
 local critical = pick_peripheral(
     "Pick the CRITICAL matrix port:",
@@ -184,12 +257,18 @@ local mon = pick_peripheral(
     existing.monitor,
     describe_monitor)
 
-local cg_side = pick_side(
-    "Redstone side for the CRITICAL -> GENERAL gate cable:",
-    existing.critical_to_general_side)
-local gs_side = pick_side(
-    "Redstone side for the GENERAL -> SINK gate cable:",
-    existing.general_to_sink_side)
+-- Normalize legacy "_side" string defaults into the new list form.
+local existing_cg = peripherals_lib.compile_outputs(
+    existing.critical_to_general_outputs or existing.critical_to_general_side)
+local existing_gs = peripherals_lib.compile_outputs(
+    existing.general_to_sink_outputs or existing.general_to_sink_side)
+
+local cg_outputs = pick_outputs(
+    "Outputs for the CRITICAL -> GENERAL gate:",
+    existing_cg, relay_candidates)
+local gs_outputs = pick_outputs(
+    "Outputs for the GENERAL -> SINK gate:",
+    existing_gs, relay_candidates)
 
 local polarity = pick_polarity(existing.gate_signal)
 
@@ -214,6 +293,18 @@ local function fmt_str(s)
     return string.format("%q", s)
 end
 
+local function fmt_outputs(outputs)
+    if not outputs or #outputs == 0 then return "{}" end
+    local lines = {"{"}
+    for _, o in ipairs(outputs) do
+        lines[#lines + 1] = string.format(
+            "        {peripheral = %q, side = %q},",
+            o.peripheral or "computer", o.side)
+    end
+    lines[#lines + 1] = "    }"
+    return table.concat(lines, "\n")
+end
+
 local config_text = string.format([[
 -- ============================================================
 -- Induction Matrix Monitor configuration
@@ -226,9 +317,12 @@ return {
     general_matrix  = %s,
     monitor         = %s,
 
-    -- Redstone sides (set to nil to disable a gate)
-    critical_to_general_side = %s,
-    general_to_sink_side     = %s,
+    -- Redstone outputs. Each gate may drive any number of outputs (the
+    -- computer's own sides and/or any redstone relay sides). When the gate
+    -- should be OPEN, every entry in the list gets the redstone signal.
+    -- Set to {} to disable a gate.
+    critical_to_general_outputs = %s,
+    general_to_sink_outputs     = %s,
 
     -- "high_opens" or "low_opens"
     gate_signal = %s,
@@ -254,8 +348,8 @@ return {
     fmt_str(critical),
     fmt_str(general),
     fmt_str(mon),
-    fmt_str(cg_side),
-    fmt_str(gs_side),
+    fmt_outputs(cg_outputs),
+    fmt_outputs(gs_outputs),
     fmt_str(polarity),
     c_open, c_close, g_open, g_close,
     existing.live_interval or 2,
@@ -269,8 +363,14 @@ header("Summary")
 info("critical matrix : " .. tostring(critical))
 info("general  matrix : " .. tostring(general))
 info("monitor         : " .. tostring(mon))
-info("c->g redstone   : " .. tostring(cg_side or "(disabled)"))
-info("g->s redstone   : " .. tostring(gs_side or "(disabled)"))
+local function summarize_outputs(outputs)
+    if #outputs == 0 then return "(disabled)" end
+    local parts = {}
+    for _, o in ipairs(outputs) do parts[#parts + 1] = format_output(o) end
+    return table.concat(parts, ", ")
+end
+info("c->g redstone   : " .. summarize_outputs(cg_outputs))
+info("g->s redstone   : " .. summarize_outputs(gs_outputs))
 info("polarity        : " .. tostring(polarity))
 info(string.format("critical gate   : open >= %d%%, close <= %d%%", c_open * 100, c_close * 100))
 info(string.format("general  gate   : open >= %d%%, close <= %d%%", g_open * 100, g_close * 100))

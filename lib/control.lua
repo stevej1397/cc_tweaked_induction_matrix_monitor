@@ -1,10 +1,21 @@
+local peripherals_lib = require("lib.peripherals")
+
 local M = {}
 M.__index = M
 
 function M.new(cfg)
     local self = setmetatable({}, M)
     self.cfg = cfg
-    -- Default to "closed" so a fresh boot starts safe (no power flowing past critical).
+
+    -- Normalize each gate to a list of {peripheral, side}.
+    -- Accepts both the new "_outputs" list schema and the legacy "_side"
+    -- single-string schema, with the list taking priority.
+    self.cg_outputs = peripherals_lib.compile_outputs(
+        cfg.critical_to_general_outputs or cfg.critical_to_general_side)
+    self.gs_outputs = peripherals_lib.compile_outputs(
+        cfg.general_to_sink_outputs or cfg.general_to_sink_side)
+
+    -- Default to "closed" so a fresh boot starts safe.
     self.cg_open = false
     self.gs_open = false
     self:apply_redstone()
@@ -31,14 +42,13 @@ function M:update(critical_fill, general_fill)
 end
 
 function M:apply_redstone()
-    local cfg = self.cfg
-    local high_opens = cfg.gate_signal ~= "low_opens"
+    local high_opens = self.cfg.gate_signal ~= "low_opens"
     local function signal(open) if high_opens then return open else return not open end end
-    if cfg.critical_to_general_side then
-        redstone.setOutput(cfg.critical_to_general_side, signal(self.cg_open))
+    for _, out in ipairs(self.cg_outputs) do
+        peripherals_lib.set_output(out, signal(self.cg_open))
     end
-    if cfg.general_to_sink_side then
-        redstone.setOutput(cfg.general_to_sink_side, signal(self.gs_open))
+    for _, out in ipairs(self.gs_outputs) do
+        peripherals_lib.set_output(out, signal(self.gs_open))
     end
 end
 
@@ -49,7 +59,12 @@ function M:close_all()
 end
 
 function M:state()
-    return {cg_open = self.cg_open, gs_open = self.gs_open}
+    return {
+        cg_open = self.cg_open,
+        gs_open = self.gs_open,
+        cg_outputs = self.cg_outputs,
+        gs_outputs = self.gs_outputs,
+    }
 end
 
 return M

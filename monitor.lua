@@ -25,12 +25,20 @@ if not general then die("general matrix: " .. err2) end
 local monitor, err3 = peripherals_lib.find_monitor(config.monitor)
 if not monitor then die("monitor: " .. err3) end
 
-for _, side in ipairs({"critical_to_general_side", "general_to_sink_side"}) do
-    local s = config[side]
-    if s and not peripherals_lib.valid_side(s) then
-        die("invalid redstone side for " .. side .. ": " .. tostring(s))
+-- Validate every configured redstone output before going live.
+local function validate_outputs(label, list_key, legacy_key)
+    local outputs = peripherals_lib.compile_outputs(config[list_key] or config[legacy_key])
+    for i, o in ipairs(outputs) do
+        if not peripherals_lib.valid_side(o.side) then
+            die(string.format("%s output #%d: invalid side '%s'", label, i, tostring(o.side)))
+        end
+        if o.peripheral ~= "computer" and not peripheral.isPresent(o.peripheral) then
+            die(string.format("%s output #%d: peripheral '%s' not present", label, i, tostring(o.peripheral)))
+        end
     end
 end
+validate_outputs("critical->general", "critical_to_general_outputs", "critical_to_general_side")
+validate_outputs("general->sink",     "general_to_sink_outputs",     "general_to_sink_side")
 
 local history = History.load(config.history_path, config.history_max_samples)
 local control = Control.new(config)

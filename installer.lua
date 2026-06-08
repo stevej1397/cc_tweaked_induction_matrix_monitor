@@ -9,7 +9,7 @@
 --   --no-setup     skip the interactive setup step
 --   --update       used by update.lua (no-op marker; preserves config)
 
-local VERSION = "0.2.0"
+local VERSION = "0.3.0"
 local REPO_BASE = "https://raw.githubusercontent.com/stevej1397/cc_tweaked_induction_matrix_monitor/main/"
 local PIXELBOX_URL = "https://raw.githubusercontent.com/9551-Dev/pixelbox_lite/master/pixelbox_lite.lua"
 

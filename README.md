@@ -23,16 +23,19 @@ The 5% hysteresis prevents the gates from rapidly flapping on/off.
 3. **Wired modems** on both Mekanism Induction Ports. The peripheral name is
    typically `inductionPort_0`, `inductionPort_1`, etc. -- run `peripherals`
    on the computer to see actual names.
-4. **Redstone wiring**:
-   - One side of the computer goes to the universal cable between
-     Critical and General. Configure the cable with the Mekanism
-     **Configurator** -> *Redstone control* -> **High** (active only when
-     receiving a redstone signal).
-   - Another side goes to the cable between General and the Power Sink,
-     also set to **High**.
-   - With `gate_signal = "high_opens"` (default), the computer emits
-     redstone when it wants the gate **open**. If the computer dies, all
-     gates lose signal and close -- a safe failure mode.
+4. **Redstone wiring** (any combination of these works):
+   - Direct from a side of the **computer** to the cable, or
+   - Through one or more CC:Tweaked **Redstone Relays** (attached via
+     wired modem). Each gate can drive multiple outputs at once -- e.g.
+     "computer's left side *and* `redstone_relay` top *and*
+     `redstone_relay_1` north" -- all toggled together.
+
+   Configure the Mekanism universal cables with the **Configurator** ->
+   *Redstone control* -> **High** (active only when receiving a signal).
+
+   With `gate_signal = "high_opens"` (default), the computer emits
+   redstone when it wants the gate **open**. If the computer dies, all
+   gates lose signal and close -- a safe failure mode.
 
 ## Install
 
@@ -45,8 +48,10 @@ wget run https://raw.githubusercontent.com/stevej1397/cc_tweaked_induction_matri
 The installer downloads everything from this repo, fetches
 [pixelbox_lite](https://github.com/9551-Dev/pixelbox_lite) for the history
 graph, and runs **`setup`** (interactive) on a fresh install -- it detects
-your matrix ports + monitor and asks which is which, asks for the redstone
-sides, polarity, and thresholds. Then it runs `check` to verify.
+your matrix ports, monitor, *and* every redstone-output peripheral
+(relays, integrators), asks which is which, then for each gate lets you
+add as many `{peripheral, side}` outputs as you want (the computer's own
+sides + any/all relay sides, mixed freely). Then it runs `check`.
 
 ## Reconfigure
 

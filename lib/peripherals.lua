@@ -48,4 +48,52 @@ function M.valid_side(s)
     return VALID_SIDES[s] == true
 end
 
+-- Find peripherals that expose a redstone setOutput method (redstone relays,
+-- redstone integrators, etc.). Excludes the computer itself.
+function M.find_redstone_outputs()
+    local matches = {}
+    for _, name in ipairs(peripheral.getNames()) do
+        local ok, p = pcall(peripheral.wrap, name)
+        if ok and p and type(p.setOutput) == "function" and type(p.getOutput) == "function" then
+            matches[#matches + 1] = name
+        end
+    end
+    return matches
+end
+
+-- Normalize a gate's output specification.
+-- Accepts:
+--   nil                  -> {}                                  (disabled)
+--   "left"               -> {{peripheral="computer", side="left"}}  (legacy)
+--   {{peripheral, side}} -> returned as-is
+function M.compile_outputs(spec)
+    if spec == nil then return {} end
+    if type(spec) == "string" then
+        return {{peripheral = "computer", side = spec}}
+    end
+    if type(spec) == "table" then
+        local out = {}
+        for _, o in ipairs(spec) do
+            if type(o) == "table" and o.side then
+                out[#out + 1] = {peripheral = o.peripheral or "computer", side = o.side}
+            end
+        end
+        return out
+    end
+    return {}
+end
+
+-- Drive one normalized output ({peripheral=..., side=...}) to the given bool.
+function M.set_output(out, value)
+    if not out or not out.side then return false, "missing side" end
+    local p = out.peripheral or "computer"
+    if p == "computer" then
+        local ok, err = pcall(redstone.setOutput, out.side, value)
+        return ok, err
+    else
+        local ok, err = pcall(peripheral.call, p, "setOutput", out.side, value)
+        return ok, err
+    end
+end
+
 return M
