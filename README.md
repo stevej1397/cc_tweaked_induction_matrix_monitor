@@ -44,29 +44,28 @@ wget run https://raw.githubusercontent.com/stevej1397/cc_tweaked_induction_matri
 
 The installer downloads everything from this repo, fetches
 [pixelbox_lite](https://github.com/9551-Dev/pixelbox_lite) for the history
-graph, and then runs `check` to report any problems with the configuration.
+graph, and runs **`setup`** (interactive) on a fresh install -- it detects
+your matrix ports + monitor and asks which is which, asks for the redstone
+sides, polarity, and thresholds. Then it runs `check` to verify.
 
-## Configure
+## Reconfigure
 
-Edit `config.lua` -- at minimum, set:
-
-- `critical_matrix` / `general_matrix` -- the peripheral names from
-  `peripherals`
-- `monitor` -- the monitor's peripheral name
-- `critical_to_general_side` / `general_to_sink_side` -- the redstone sides
-
-Then run `check` again to verify, and `reboot` (or run `monitor`) to start.
+Run `setup` any time to re-do the configuration interactively. Your old
+config is backed up to `config.lua.bak` first. Or edit `config.lua` by
+hand and re-run `check`.
 
 ## Commands
 
 | Command   | What it does                                           |
 |-----------|--------------------------------------------------------|
 | `monitor` | Start the live monitor loop (also runs on boot)       |
+| `setup`   | Interactive reconfigure -- detects peripherals, prompts |
 | `check`   | Validate peripherals, sides, thresholds, pixelbox     |
 | `update`  | Re-run the installer to pull the latest version       |
 
-`update` keeps your `config.lua`. A fresh default is dropped into
-`config.example.lua` for reference.
+`update` keeps your `config.lua`. A fresh default is always dropped into
+`config.example.lua` for reference. Use `update --reconfigure` (or
+`setup`) to redo the interactive picks.
 
 ## Files installed
 
@@ -74,9 +73,10 @@ Then run `check` again to verify, and `reboot` (or run `monitor`) to start.
 /installer.lua
 /startup.lua          # auto-runs monitor on boot
 /monitor.lua          # main program
+/setup.lua            # interactive configurator
 /check.lua            # pre-flight checks
 /update.lua           # one-shot self-update
-/config.lua           # user-editable settings
+/config.lua           # user-editable settings (written by setup)
 /pixelbox_lite.lua    # from 9551-Dev/pixelbox_lite
 /lib/util.lua
 /lib/peripherals.lua

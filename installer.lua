@@ -4,10 +4,12 @@
 --   wget run https://raw.githubusercontent.com/stevej1397/cc_tweaked_induction_matrix_monitor/main/installer.lua
 --
 -- Flags:
---   --force   overwrite config.lua with defaults (otherwise existing config is kept)
---   --update  alias for default behavior; used by update.lua
+--   --force        overwrite config.lua and re-run interactive setup
+--   --reconfigure  re-run interactive setup even if config.lua exists
+--   --no-setup     skip the interactive setup step
+--   --update       used by update.lua (no-op marker; preserves config)
 
-local VERSION = "0.1.0"
+local VERSION = "0.2.0"
 local REPO_BASE = "https://raw.githubusercontent.com/stevej1397/cc_tweaked_induction_matrix_monitor/main/"
 local PIXELBOX_URL = "https://raw.githubusercontent.com/9551-Dev/pixelbox_lite/master/pixelbox_lite.lua"
 
@@ -16,6 +18,7 @@ local FILES = {
     "startup.lua",
     "check.lua",
     "update.lua",
+    "setup.lua",
     "lib/util.lua",
     "lib/peripherals.lua",
     "lib/history.lua",
@@ -27,8 +30,12 @@ local FILES = {
 
 local args = {...}
 local force = false
+local reconfigure = false
+local skip_setup = false
 for _, a in ipairs(args) do
-    if a == "--force" then force = true end
+    if a == "--force" then force = true; reconfigure = true end
+    if a == "--reconfigure" then reconfigure = true end
+    if a == "--no-setup" then skip_setup = true end
 end
 
 if not http then
@@ -107,22 +114,30 @@ end
 
 print("")
 header("[3/3] config.lua")
-if fs.exists("config.lua") and not force then
-    ok("config.lua exists -- keeping your edits")
-    local s, e = download(REPO_BASE .. "config.lua", "config.example.lua")
-    if s then
-        ok("config.example.lua  (fresh defaults for reference)")
-    else
-        fail("config.example.lua  (" .. tostring(e) .. ")")
-    end
+local s, e = download(REPO_BASE .. "config.lua", "config.example.lua")
+if s then
+    ok("config.example.lua  (fresh defaults for reference)")
 else
-    local s, e = download(REPO_BASE .. "config.lua", "config.lua")
-    if s then
-        ok("config.lua  (defaults installed -- EDIT BEFORE RUNNING)")
-    else
-        fail("config.lua  (" .. tostring(e) .. ")")
-        errors = errors + 1
+    fail("config.example.lua  (" .. tostring(e) .. ")")
+end
+
+local need_setup
+if force then
+    if fs.exists("config.lua") then
+        if fs.exists("config.lua.bak") then fs.delete("config.lua.bak") end
+        fs.copy("config.lua", "config.lua.bak")
+        fs.delete("config.lua")
+        ok("config.lua backed up to config.lua.bak (--force)")
     end
+    need_setup = true
+elseif reconfigure then
+    need_setup = true
+elseif not fs.exists("config.lua") then
+    need_setup = true
+    ok("no config.lua yet -- will run interactive setup")
+else
+    need_setup = false
+    ok("config.lua exists -- keeping your edits (use --reconfigure to redo)")
 end
 
 print("")
@@ -134,14 +149,29 @@ if errors > 0 then
 end
 
 term.setTextColor(colors.lime)
-print("Install complete.")
+print("Files installed.")
 term.setTextColor(colors.white)
 print("")
-print("Next steps:")
-print("  1. Edit config.lua: set peripheral names and redstone sides")
-print("  2. Run 'check' to validate everything is wired correctly")
-print("  3. Reboot, or run 'monitor' to start")
+
+if need_setup and not skip_setup then
+    header("Running interactive setup...")
+    print("")
+    shell.run("setup")
+    print("")
+    header("Running 'check' to verify...")
+    print("")
+    shell.run("check")
+else
+    if skip_setup and need_setup then
+        print("Setup skipped (--no-setup). Run 'setup' before starting.")
+    else
+        header("Running 'check'...")
+        print("")
+        shell.run("check")
+    end
+end
+
 print("")
-header("Running 'check' now...")
-print("")
-shell.run("check")
+print("To reconfigure later: run 'setup'")
+print("To pull updates:      run 'update'")
+print("To start the monitor: run 'monitor' (or reboot)")
