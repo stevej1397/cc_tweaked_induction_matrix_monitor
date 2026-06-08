@@ -6,6 +6,20 @@
 -- Falls back to a clear error if PixelUI / shrekbox aren't installed yet
 -- (run 'update' to fetch them).
 
+local SETUP_VERSION = "0.4.2"
+
+-- Quick version banner so we can tell whether 'update' actually replaced
+-- this file on the computer. If you see this banner, you have at least
+-- v0.4.2.  (CTRL+T while it's showing aborts.)
+term.setBackgroundColor(colors.black)
+term.clear()
+term.setCursorPos(1, 1)
+term.setTextColor(colors.cyan)
+print("Induction Matrix Monitor setup " .. SETUP_VERSION)
+term.setTextColor(colors.white)
+print("Loading PixelUI...")
+sleep(0.5)
+
 local ok_pix, pixelui = pcall(require, "pixelui")
 if not ok_pix then
     term.setTextColor(colors.red)
@@ -125,7 +139,7 @@ end
 
 -- Title bar (row 1)
 root:addChild(mkLabel({
-    x = 2, y = 1, text = "Induction Matrix Monitor - Setup",
+    x = 2, y = 1, text = "Induction Matrix Monitor - Setup v" .. SETUP_VERSION,
     fg = colors.white, bg = colors.gray,
 }))
 
