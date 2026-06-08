@@ -138,6 +138,18 @@ parse, the buffer starts empty.
 - **HTTP API errors during install** -- in `computercraft-common.toml`
   set `http.enabled = true`.
 
+## External libraries
+
+The installer fetches these alongside the program files:
+
+- [pixelbox_lite](https://github.com/9551-Dev/pixelbox_lite) -- teletext pixel
+  renderer, used for the 12-hour history graph on the monitor.
+- [PixelUI v2](https://github.com/Shlomo1412/PixelUI-v2) -- GUI library used
+  by the interactive `setup` wizard.
+- [shrekbox](https://codeberg.org/ShreksHellraiser/shrekbox) -- PixelUI's
+  underlying teletext renderer.
+
 ## License
 
-MIT (this repo). Pixelbox Lite is MIT, (c) 9551Dev.
+MIT (this repo). Pixelbox Lite is MIT, (c) 9551Dev. PixelUI v2 is MIT,
+(c) Shlomo1412. Shrekbox is MIT, (c) ShreksHellraiser.

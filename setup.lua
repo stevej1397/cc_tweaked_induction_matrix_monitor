@@ -1,35 +1,24 @@
--- Interactive configurator. Detects induction matrices, monitors and
--- redstone-output peripherals (relays/integrators), asks which is which,
--- collects per-gate output lists (computer side + any/all relay sides),
--- polarity, and thresholds, and writes a fresh config.lua.
+-- Induction Matrix Monitor: interactive setup wizard.
 --
--- Safe to run repeatedly; existing config.lua is backed up to config.lua.bak.
+-- Built on PixelUI v2 -- a GUI-style multi-step form for picking
+-- peripherals, gate outputs, polarity, and thresholds.
+--
+-- Falls back to a clear error if PixelUI / shrekbox aren't installed yet
+-- (run 'update' to fetch them).
+
+local ok_pix, pixelui = pcall(require, "pixelui")
+if not ok_pix then
+    term.setTextColor(colors.red)
+    print("pixelui is not installed. Run 'update' first to fetch it.")
+    term.setTextColor(colors.white)
+    return
+end
 
 local peripherals_lib = require("lib.peripherals")
 
-local function header(s)
-    term.setTextColor(colors.cyan); print(s); term.setTextColor(colors.white)
-end
-
-local function info(s)
-    term.setTextColor(colors.lightGray); print("  " .. s); term.setTextColor(colors.white)
-end
-
-local function warn(s)
-    term.setTextColor(colors.yellow); print("  " .. s); term.setTextColor(colors.white)
-end
-
-local function prompt(question, default)
-    if default ~= nil and tostring(default) ~= "" then
-        write(question .. " [" .. tostring(default) .. "]: ")
-    else
-        write(question .. ": ")
-    end
-    local line = read()
-    if line == "" then return default end
-    return line
-end
-
+-- ============================================================
+-- Peripheral discovery
+-- ============================================================
 local function is_matrix(p)
     return type(p.getEnergy) == "function"
        and type(p.getMaxEnergy) == "function"
@@ -69,225 +58,524 @@ local function describe_monitor(name)
     local ok, p = pcall(peripheral.wrap, name)
     if not ok or not p then return "" end
     local ok2, w, h = pcall(p.getSize)
-    if ok2 and w and h then return string.format("  (%dx%d chars)", w, h) end
+    if ok2 and w and h then return string.format("  (%dx%d)", w, h) end
     return ""
 end
 
-local function pick_peripheral(label, candidates, current, describer)
-    print("")
-    header(label)
-    if #candidates == 0 then
-        warn("no candidates detected -- you can still enter a name manually")
-    else
-        for i, name in ipairs(candidates) do
-            local extra = describer and describer(name) or ""
-            local marker = (name == current) and "*" or " "
-            info(string.format("%s [%d] %s%s", marker, i, name, extra))
-        end
-        info("  [m]   enter a name manually")
-    end
-    local default = current
-    if not default and #candidates > 0 then default = candidates[1] end
-    while true do
-        local answer = prompt("  choose", default)
-        if answer == nil then return nil end
-        local n = tonumber(answer)
-        if n and candidates[n] then return candidates[n] end
-        if answer == "m" or answer == "M" then
-            local typed = prompt("  enter peripheral name", current)
-            if typed and typed ~= "" then return typed end
-        else
-            for _, name in ipairs(candidates) do
-                if name == answer then return answer end
-            end
-            if answer == default and default then return default end
-        end
-        info("not recognized, try again")
-    end
-end
-
-local VALID_SIDES = {top=true, bottom=true, left=true, right=true, front=true, back=true}
-
-local function ask_side(prompt_label)
-    while true do
-        local answer = prompt(prompt_label or "  side (top/bottom/left/right/front/back)", nil)
-        if answer == nil or answer == "" then return nil end
-        if VALID_SIDES[answer] then return answer end
-        warn("not a valid side")
-    end
-end
-
-local function format_output(o)
-    return string.format("%s side=%s", o.peripheral or "computer", o.side or "?")
-end
-
-local function pick_outputs(label, current, relays)
-    print("")
-    header(label)
-    info("Add as many outputs as you want -- the computer will emit a redstone")
-    info("signal on every one of them when this gate should be OPEN.")
-    info("Pick the computer side, any relay side(s), or any mix.")
-
-    -- Copy starting outputs (in case user cancels mid-edit, original is preserved)
-    local outputs = {}
-    if current then
-        for _, o in ipairs(current) do
-            outputs[#outputs + 1] = {peripheral = o.peripheral or "computer", side = o.side}
-        end
-    end
-
-    while true do
-        print("")
-        info("Current outputs for this gate:")
-        if #outputs == 0 then
-            info("  (none -- this gate will be disabled)")
-        else
-            for i, o in ipairs(outputs) do
-                info(string.format("  [%d] %s", i, format_output(o)))
-            end
-        end
-
-        print("")
-        info("Add an output:")
-        info("  [c]      computer side")
-        for i, name in ipairs(relays) do
-            info(string.format("  [%d]      %s", i, name))
-        end
-        if #outputs > 0 then
-            info("  [r<N>]   remove output number N  (e.g. r1)")
-        end
-        info("  [done]   finish")
-
-        local answer = prompt("  choice", "done")
-        if answer == nil or answer == "done" or answer == "" then
-            return outputs
-        elseif answer == "c" or answer == "C" then
-            local side = ask_side("  side on computer (top/bottom/left/right/front/back)")
-            if side then
-                outputs[#outputs + 1] = {peripheral = "computer", side = side}
-                info("added: " .. format_output(outputs[#outputs]))
-            end
-        elseif answer:sub(1, 1) == "r" or answer:sub(1, 1) == "R" then
-            local n = tonumber(answer:sub(2))
-            if n and outputs[n] then
-                local removed = table.remove(outputs, n)
-                info("removed: " .. format_output(removed))
-            else
-                warn("no output #" .. tostring(answer:sub(2)))
-            end
-        else
-            local n = tonumber(answer)
-            if n and relays[n] then
-                local side = ask_side("  side on " .. relays[n])
-                if side then
-                    outputs[#outputs + 1] = {peripheral = relays[n], side = side}
-                    info("added: " .. format_output(outputs[#outputs]))
-                end
-            else
-                warn("not recognized")
-            end
-        end
-    end
-end
-
-local function pick_polarity(current)
-    print("")
-    header("Gate polarity")
-    info("high_opens: computer emits redstone HIGH to OPEN a gate (recommended)")
-    info("low_opens : computer emits redstone LOW  to OPEN a gate")
-    info("Pair this with your Mekanism cable's Configurator redstone mode.")
-    while true do
-        local answer = prompt("  polarity", current or "high_opens")
-        if answer == "high_opens" or answer == "low_opens" then return answer end
-        warn("must be 'high_opens' or 'low_opens'")
-    end
-end
-
-local function pick_pct(label, current)
-    while true do
-        local answer = prompt(label, tostring(current))
-        local n = tonumber(answer)
-        if n then
-            if n > 1 and n <= 100 then n = n / 100 end
-            if n > 0 and n < 1 then return n end
-        end
-        warn("enter a fraction (0.75) or percent (75)")
-    end
-end
-
--- Try to load existing config as defaults
+-- ============================================================
+-- Existing config -> defaults
+-- ============================================================
 local existing = {}
 if fs.exists("config.lua") then
     local ok, t = pcall(dofile, shell.resolve("config.lua"))
     if ok and type(t) == "table" then existing = t end
 end
 
-term.setBackgroundColor(colors.black); term.clear(); term.setCursorPos(1, 1)
-header("Induction Matrix Monitor: interactive setup")
-print("")
-print("Scanning peripherals...")
-print("")
-
-local matrix_candidates = find_candidates(is_matrix)
-local monitor_candidates = find_candidates(is_monitor)
-local relay_candidates = peripherals_lib.find_redstone_outputs()
-
-info(string.format("found %d induction matrix port(s), %d monitor(s), %d redstone-output peripheral(s)",
-    #matrix_candidates, #monitor_candidates, #relay_candidates))
-
-local critical = pick_peripheral(
-    "Pick the CRITICAL matrix port:",
-    matrix_candidates,
-    existing.critical_matrix,
-    describe_matrix)
-
-local remaining = {}
-for _, n in ipairs(matrix_candidates) do
-    if n ~= critical then remaining[#remaining + 1] = n end
-end
-local general = pick_peripheral(
-    "Pick the GENERAL matrix port:",
-    remaining,
-    existing.general_matrix == critical and nil or existing.general_matrix,
-    describe_matrix)
-
-local mon = pick_peripheral(
-    "Pick the MONITOR:",
-    monitor_candidates,
-    existing.monitor,
-    describe_monitor)
-
--- Normalize legacy "_side" string defaults into the new list form.
-local existing_cg = peripherals_lib.compile_outputs(
-    existing.critical_to_general_outputs or existing.critical_to_general_side)
-local existing_gs = peripherals_lib.compile_outputs(
-    existing.general_to_sink_outputs or existing.general_to_sink_side)
-
-local cg_outputs = pick_outputs(
-    "Outputs for the CRITICAL -> GENERAL gate:",
-    existing_cg, relay_candidates)
-local gs_outputs = pick_outputs(
-    "Outputs for the GENERAL -> SINK gate:",
-    existing_gs, relay_candidates)
-
-local polarity = pick_polarity(existing.gate_signal)
-
-print("")
-header("Gate thresholds (fraction 0..1 or percent 0..100):")
-local c_open  = pick_pct("  critical opens at  ", existing.critical_open_at or 0.75)
-local c_close = pick_pct("  critical closes at ", existing.critical_close_at or 0.70)
-local g_open  = pick_pct("  general opens at   ", existing.general_open_at or 0.90)
-local g_close = pick_pct("  general closes at  ", existing.general_close_at or 0.85)
-
-if c_close > c_open then
-    warn("critical close > open; swapping")
-    c_open, c_close = c_close, c_open
-end
-if g_close > g_open then
-    warn("general close > open; swapping")
-    g_open, g_close = g_close, g_open
+local SIDES = {"top", "bottom", "left", "right", "front", "back"}
+local function side_index(s)
+    for i, v in ipairs(SIDES) do if v == s then return i end end
+    return 1
 end
 
+local state = {
+    matrices = find_candidates(is_matrix),
+    monitors = find_candidates(is_monitor),
+    relays = peripherals_lib.find_redstone_outputs(),
+
+    critical = existing.critical_matrix,
+    general = existing.general_matrix,
+    monitor = existing.monitor,
+    cg_outputs = peripherals_lib.compile_outputs(
+        existing.critical_to_general_outputs or existing.critical_to_general_side),
+    gs_outputs = peripherals_lib.compile_outputs(
+        existing.general_to_sink_outputs or existing.general_to_sink_side),
+    polarity = existing.gate_signal or "high_opens",
+
+    critical_open_pct  = math.floor((existing.critical_open_at  or 0.75) * 100 + 0.5),
+    critical_close_pct = math.floor((existing.critical_close_at or 0.70) * 100 + 0.5),
+    general_open_pct   = math.floor((existing.general_open_at   or 0.90) * 100 + 0.5),
+    general_close_pct  = math.floor((existing.general_close_at  or 0.85) * 100 + 0.5),
+
+    cancelled = false,
+    saved = false,
+}
+
+-- "computer" is always available; relays come after
+local function peripheral_choices()
+    local list = {"computer"}
+    for _, name in ipairs(state.relays) do list[#list + 1] = name end
+    return list
+end
+
+-- ============================================================
+-- App + layout
+-- ============================================================
+local app = pixelui.create({background = colors.gray})
+local root = app:getRoot()
+local SW, SH = app.window.getSize()
+
+-- Title bar (row 1)
+root:addChild(app:createLabel({
+    x = 2, y = 1, text = "Induction Matrix Monitor - Setup",
+    fg = colors.white, bg = colors.gray,
+}))
+
+-- Step indicator (row 2)
+local stepLabel = app:createLabel({
+    x = 2, y = 2, text = "",
+    fg = colors.lightGray, bg = colors.gray,
+})
+root:addChild(stepLabel)
+
+-- Content frame area (rows 3..SH-2). Each step's Frame lives here.
+local CONTENT_X, CONTENT_Y = 1, 3
+local CONTENT_W, CONTENT_H = SW, SH - 4
+
+local STEP_NAMES = {
+    "Critical matrix",
+    "General matrix",
+    "Monitor",
+    "Critical -> General outputs",
+    "General -> Sink outputs",
+    "Polarity & thresholds",
+    "Confirm & save",
+}
+local NUM_STEPS = #STEP_NAMES
+
+local function newStepFrame()
+    local f = app:createFrame({
+        x = CONTENT_X, y = CONTENT_Y,
+        width = CONTENT_W, height = CONTENT_H,
+        bg = colors.black, fg = colors.white,
+    })
+    f.visible = false
+    root:addChild(f)
+    return f
+end
+
+-- Status / error label (row SH-1)
+local statusLabel = app:createLabel({
+    x = 2, y = SH - 1, text = "",
+    fg = colors.yellow, bg = colors.gray,
+})
+root:addChild(statusLabel)
+
+local function setStatus(msg, color)
+    statusLabel:setText(msg or "")
+    if statusLabel.fg ~= nil then statusLabel.fg = color or colors.yellow end
+end
+
+-- ============================================================
+-- Step 1, 2, 3: peripheral pickers (ComboBox + info)
+-- ============================================================
+local function buildPeripheralStep(opts)
+    local frame = newStepFrame()
+    frame:addChild(app:createLabel({
+        x = 2, y = 1, text = opts.title, fg = colors.cyan, bg = colors.black,
+    }))
+    frame:addChild(app:createLabel({
+        x = 2, y = 2, text = opts.help or "", fg = colors.lightGray, bg = colors.black,
+    }))
+
+    local items = {}
+    for _, name in ipairs(opts.candidates) do items[#items + 1] = name end
+    if #items == 0 then
+        frame:addChild(app:createLabel({
+            x = 2, y = 5, text = "(no candidates detected -- check wiring)",
+            fg = colors.red, bg = colors.black,
+        }))
+        return frame, function() return nil end
+    end
+
+    local infoLabel = app:createLabel({
+        x = 2, y = 7, text = "",
+        fg = colors.lightGray, bg = colors.black,
+    })
+
+    -- Pick a sensible starting index
+    local startIdx = 1
+    if opts.initial then
+        for i, n in ipairs(opts.candidates) do
+            if n == opts.initial then startIdx = i; break end
+        end
+    end
+
+    local cb = app:createComboBox({
+        x = 2, y = 5, width = CONTENT_W - 4,
+        items = items,
+        selectedIndex = startIdx,
+        bg = colors.gray, fg = colors.white,
+        dropdownBg = colors.gray, dropdownFg = colors.white,
+        highlightBg = colors.lime, highlightFg = colors.black,
+        onChange = function(self, index)
+            local name = opts.candidates[index]
+            opts.onPick(name)
+            infoLabel:setText(opts.describer and (name .. opts.describer(name)) or name)
+        end,
+    })
+    frame:addChild(cb)
+    frame:addChild(infoLabel)
+
+    -- Apply initial pick
+    local picked = opts.candidates[startIdx]
+    opts.onPick(picked)
+    infoLabel:setText(opts.describer and (picked .. opts.describer(picked)) or picked)
+
+    return frame, function() return cb:getSelectedItem() end
+end
+
+local step1 = buildPeripheralStep({
+    title = "Step 1/" .. NUM_STEPS .. ": Pick the CRITICAL matrix",
+    help = "The matrix that should always stay charged (drives the others).",
+    candidates = state.matrices,
+    initial = state.critical,
+    describer = describe_matrix,
+    onPick = function(name) state.critical = name end,
+})
+
+local step2 = buildPeripheralStep({
+    title = "Step 2/" .. NUM_STEPS .. ": Pick the GENERAL matrix",
+    help = "The matrix that fills only after the critical one is at threshold.",
+    candidates = state.matrices,
+    initial = state.general,
+    describer = describe_matrix,
+    onPick = function(name) state.general = name end,
+})
+
+local step3 = buildPeripheralStep({
+    title = "Step 3/" .. NUM_STEPS .. ": Pick the MONITOR",
+    help = "4x3 advanced monitor recommended (~60x30 chars at scale 0.5).",
+    candidates = state.monitors,
+    initial = state.monitor,
+    describer = describe_monitor,
+    onPick = function(name) state.monitor = name end,
+})
+
+-- ============================================================
+-- Step 4, 5: output list editors
+-- ============================================================
+local function buildOutputsStep(stepIdx, title, list_ref)
+    local frame = newStepFrame()
+
+    frame:addChild(app:createLabel({
+        x = 2, y = 1, text = string.format("Step %d/%d: %s", stepIdx, NUM_STEPS, title),
+        fg = colors.cyan, bg = colors.black,
+    }))
+    frame:addChild(app:createLabel({
+        x = 2, y = 2, text = "Computer emits redstone on every output when gate is OPEN.",
+        fg = colors.lightGray, bg = colors.black,
+    }))
+
+    -- The output list. Rebuilt whenever the data changes.
+    local outputList
+    local function format_item(o) return string.format("%s side=%s", o.peripheral, o.side) end
+    local function refresh()
+        local items = {}
+        for _, o in ipairs(list_ref()) do items[#items + 1] = format_item(o) end
+        if #items == 0 then items = {"(no outputs -- gate disabled)"} end
+        outputList:setItems(items)
+    end
+
+    outputList = app:createList({
+        x = 2, y = 4, width = CONTENT_W - 4, height = 5,
+        items = {},
+        bg = colors.gray, fg = colors.white,
+        highlightBg = colors.lime, highlightFg = colors.black,
+    })
+    frame:addChild(outputList)
+
+    -- "Add output" row
+    frame:addChild(app:createLabel({
+        x = 2, y = 10, text = "Add:", fg = colors.lightGray, bg = colors.black,
+    }))
+
+    local periphCb = app:createComboBox({
+        x = 7, y = 10, width = 22,
+        items = peripheral_choices(),
+        selectedIndex = 1,
+        bg = colors.gray, fg = colors.white,
+    })
+    frame:addChild(periphCb)
+
+    local sideCb = app:createComboBox({
+        x = 30, y = 10, width = 10,
+        items = SIDES,
+        selectedIndex = 1,
+        bg = colors.gray, fg = colors.white,
+    })
+    frame:addChild(sideCb)
+
+    local addBtn = app:createButton({
+        x = 41, y = 10, width = CONTENT_W - 42, height = 1,
+        label = "+ Add", bg = colors.green, fg = colors.white,
+        onClick = function()
+            local periph = periphCb:getSelectedItem()
+            local side = sideCb:getSelectedItem()
+            if periph and side then
+                table.insert(list_ref(), {peripheral = periph, side = side})
+                refresh()
+                setStatus("added " .. periph .. " side=" .. side, colors.lime)
+            end
+        end,
+    })
+    frame:addChild(addBtn)
+
+    local removeBtn = app:createButton({
+        x = 2, y = 12, width = CONTENT_W - 4, height = 1,
+        label = "- Remove selected", bg = colors.red, fg = colors.white,
+        onClick = function()
+            local list = list_ref()
+            local idx = outputList.selectedIndex
+            if idx and list[idx] then
+                local removed = table.remove(list, idx)
+                refresh()
+                setStatus("removed " .. removed.peripheral .. " side=" .. removed.side, colors.lime)
+            else
+                setStatus("nothing selected to remove", colors.yellow)
+            end
+        end,
+    })
+    frame:addChild(removeBtn)
+
+    refresh()
+    return frame
+end
+
+local step4 = buildOutputsStep(4, "Critical -> General gate outputs",
+    function() return state.cg_outputs end)
+local step5 = buildOutputsStep(5, "General -> Sink gate outputs",
+    function() return state.gs_outputs end)
+
+-- ============================================================
+-- Step 6: polarity + thresholds
+-- ============================================================
+local step6 = newStepFrame()
+step6:addChild(app:createLabel({
+    x = 2, y = 1, text = "Step 6/" .. NUM_STEPS .. ": Polarity & thresholds",
+    fg = colors.cyan, bg = colors.black,
+}))
+
+step6:addChild(app:createLabel({
+    x = 2, y = 3, text = "Redstone polarity:",
+    fg = colors.white, bg = colors.black,
+}))
+local radioHigh = app:createRadioButton({
+    x = 4, y = 4, label = "High opens (recommended)",
+    group = "polarity", value = "high_opens",
+    selected = state.polarity == "high_opens",
+    fg = colors.white, bg = colors.black,
+    onChange = function(self, selected)
+        if selected then state.polarity = "high_opens" end
+    end,
+})
+local radioLow = app:createRadioButton({
+    x = 4, y = 5, label = "Low opens",
+    group = "polarity", value = "low_opens",
+    selected = state.polarity == "low_opens",
+    fg = colors.white, bg = colors.black,
+    onChange = function(self, selected)
+        if selected then state.polarity = "low_opens" end
+    end,
+})
+step6:addChild(radioHigh)
+step6:addChild(radioLow)
+
+step6:addChild(app:createLabel({
+    x = 2, y = 7, text = "Gate thresholds (open / close):",
+    fg = colors.white, bg = colors.black,
+}))
+
+local function thresholdRow(y, label, getter, setter)
+    step6:addChild(app:createLabel({
+        x = 2, y = y, text = label, fg = colors.lightGray, bg = colors.black,
+    }))
+    local slider = app:createSlider({
+        x = 16, y = y, width = CONTENT_W - 22,
+        min = 1, max = 99, step = 1, value = getter(),
+        showValue = true,
+        bg = colors.gray, fg = colors.white,
+        formatValue = function(self, v) return string.format("%d%%", v) end,
+        onChange = function(self, v) setter(v) end,
+    })
+    step6:addChild(slider)
+end
+
+thresholdRow(8,  "critical open:",  function() return state.critical_open_pct end,
+    function(v) state.critical_open_pct = v end)
+thresholdRow(9,  "critical close:", function() return state.critical_close_pct end,
+    function(v) state.critical_close_pct = v end)
+thresholdRow(10, "general open:",   function() return state.general_open_pct end,
+    function(v) state.general_open_pct = v end)
+thresholdRow(11, "general close:",  function() return state.general_close_pct end,
+    function(v) state.general_close_pct = v end)
+
+step6:addChild(app:createLabel({
+    x = 2, y = 13, text = "(close must be <= open for each gate)",
+    fg = colors.gray, bg = colors.black,
+}))
+
+-- ============================================================
+-- Step 7: confirm & save
+-- ============================================================
+local step7 = newStepFrame()
+step7:addChild(app:createLabel({
+    x = 2, y = 1, text = "Step 7/" .. NUM_STEPS .. ": Confirm & save",
+    fg = colors.cyan, bg = colors.black,
+}))
+
+local summaryLabels = {}
+for i = 1, 12 do
+    local l = app:createLabel({
+        x = 2, y = 2 + i, text = "",
+        fg = colors.white, bg = colors.black,
+    })
+    step7:addChild(l)
+    summaryLabels[i] = l
+end
+
+local function summarize_outputs(outputs)
+    if #outputs == 0 then return "(disabled)" end
+    local parts = {}
+    for _, o in ipairs(outputs) do
+        parts[#parts + 1] = o.peripheral .. ":" .. o.side
+    end
+    return table.concat(parts, ", ")
+end
+
+local function refreshSummary()
+    summaryLabels[1]:setText("Critical matrix : " .. tostring(state.critical))
+    summaryLabels[2]:setText("General  matrix : " .. tostring(state.general))
+    summaryLabels[3]:setText("Monitor         : " .. tostring(state.monitor))
+    summaryLabels[4]:setText("C->G outputs    : " .. summarize_outputs(state.cg_outputs))
+    summaryLabels[5]:setText("G->S outputs    : " .. summarize_outputs(state.gs_outputs))
+    summaryLabels[6]:setText("Polarity        : " .. state.polarity)
+    summaryLabels[7]:setText(string.format("Critical gate   : open >= %d%%, close <= %d%%",
+        state.critical_open_pct, state.critical_close_pct))
+    summaryLabels[8]:setText(string.format("General gate    : open >= %d%%, close <= %d%%",
+        state.general_open_pct, state.general_close_pct))
+    summaryLabels[9]:setText("")
+    summaryLabels[10]:setText("Click Save to write config.lua and exit.")
+    summaryLabels[11]:setText("(existing config.lua will be backed up to config.lua.bak)")
+end
+
+-- ============================================================
+-- Step registry + navigation
+-- ============================================================
+local steps = {step1, step2, step3, step4, step5, step6, step7}
+local currentStep = 1
+
+local function validateStep(n)
+    if n == 1 and not state.critical then return "Pick a critical matrix" end
+    if n == 2 then
+        if not state.general then return "Pick a general matrix" end
+        if state.general == state.critical then return "General and critical must be different matrices" end
+    end
+    if n == 3 and not state.monitor then return "Pick a monitor" end
+    if n == 6 then
+        if state.critical_close_pct > state.critical_open_pct then
+            return "Critical close must be <= critical open"
+        end
+        if state.general_close_pct > state.general_open_pct then
+            return "General close must be <= general open"
+        end
+    end
+    return nil
+end
+
+local backBtn, nextBtn, cancelBtn
+
+local function gotoStep(n)
+    for i, frame in ipairs(steps) do frame.visible = (i == n) end
+    currentStep = n
+    stepLabel:setText(string.format("Step %d / %d  -  %s", n, NUM_STEPS, STEP_NAMES[n]))
+    backBtn.disabled = (n == 1)
+    if n == NUM_STEPS then
+        nextBtn:setLabel("Save")
+        refreshSummary()
+    else
+        nextBtn:setLabel("Next >")
+    end
+    setStatus("")
+end
+
+-- ============================================================
+-- Bottom navigation buttons (row SH)
+-- ============================================================
+backBtn = app:createButton({
+    x = 2, y = SH, width = 8, height = 1,
+    label = "< Back", bg = colors.gray, fg = colors.white,
+    onClick = function()
+        if currentStep > 1 then gotoStep(currentStep - 1) end
+    end,
+})
+root:addChild(backBtn)
+
+cancelBtn = app:createButton({
+    x = 12, y = SH, width = 10, height = 1,
+    label = "Cancel", bg = colors.red, fg = colors.white,
+    onClick = function()
+        state.cancelled = true
+        app:stop()
+    end,
+})
+root:addChild(cancelBtn)
+
+nextBtn = app:createButton({
+    x = SW - 9, y = SH, width = 9, height = 1,
+    label = "Next >", bg = colors.lime, fg = colors.black,
+    onClick = function()
+        local err = validateStep(currentStep)
+        if err then setStatus(err, colors.red); return end
+        if currentStep < NUM_STEPS then
+            gotoStep(currentStep + 1)
+        else
+            state.saved = true
+            app:stop()
+        end
+    end,
+})
+root:addChild(nextBtn)
+
+gotoStep(1)
+
+-- ============================================================
+-- Run with our own loop so we could inject timers later
+-- ============================================================
+app.running = true
+app:render()
+local ok, err = pcall(function()
+    while app.running do
+        local event = {os.pullEvent()}
+        if event[1] == "terminate" then
+            app.running = false
+            state.cancelled = true
+        else
+            app:step(table.unpack(event))
+        end
+    end
+end)
+
+-- Restore terminal
+term.setBackgroundColor(colors.black)
+term.clear()
+term.setCursorPos(1, 1)
+
+if not ok then
+    term.setTextColor(colors.red)
+    print("Setup wizard crashed:")
+    print(tostring(err))
+    term.setTextColor(colors.white)
+    return
+end
+
+if state.cancelled or not state.saved then
+    print("Setup cancelled. config.lua not modified.")
+    return
+end
+
+-- ============================================================
+-- Write config.lua
+-- ============================================================
 local function fmt_str(s)
     if s == nil then return "nil" end
     return string.format("%q", s)
@@ -308,91 +596,60 @@ end
 local config_text = string.format([[
 -- ============================================================
 -- Induction Matrix Monitor configuration
--- Generated by setup. Re-run 'setup' to regenerate interactively,
--- or edit values below by hand.
+-- Generated by setup. Re-run 'setup' anytime to regenerate.
 -- ============================================================
 return {
-    -- Peripheral names
     critical_matrix = %s,
     general_matrix  = %s,
     monitor         = %s,
 
-    -- Redstone outputs. Each gate may drive any number of outputs (the
-    -- computer's own sides and/or any redstone relay sides). When the gate
-    -- should be OPEN, every entry in the list gets the redstone signal.
-    -- Set to {} to disable a gate.
     critical_to_general_outputs = %s,
     general_to_sink_outputs     = %s,
 
-    -- "high_opens" or "low_opens"
     gate_signal = %s,
 
-    -- Gate thresholds (fractions, with hysteresis)
     critical_open_at  = %s,
     critical_close_at = %s,
     general_open_at   = %s,
     general_close_at  = %s,
 
-    -- Sampling
     live_interval        = %s,
     history_interval     = %s,
     history_max_samples  = %s,
     history_path         = "/history.dat",
 
-    -- Display
     text_scale     = %s,
     critical_color = colors.lime,
     general_color  = colors.cyan,
 }
 ]],
-    fmt_str(critical),
-    fmt_str(general),
-    fmt_str(mon),
-    fmt_outputs(cg_outputs),
-    fmt_outputs(gs_outputs),
-    fmt_str(polarity),
-    c_open, c_close, g_open, g_close,
+    fmt_str(state.critical),
+    fmt_str(state.general),
+    fmt_str(state.monitor),
+    fmt_outputs(state.cg_outputs),
+    fmt_outputs(state.gs_outputs),
+    fmt_str(state.polarity),
+    state.critical_open_pct / 100,
+    state.critical_close_pct / 100,
+    state.general_open_pct / 100,
+    state.general_close_pct / 100,
     existing.live_interval or 2,
     existing.history_interval or 30,
     existing.history_max_samples or 1440,
     existing.text_scale or 0.5
 )
 
-print("")
-header("Summary")
-info("critical matrix : " .. tostring(critical))
-info("general  matrix : " .. tostring(general))
-info("monitor         : " .. tostring(mon))
-local function summarize_outputs(outputs)
-    if #outputs == 0 then return "(disabled)" end
-    local parts = {}
-    for _, o in ipairs(outputs) do parts[#parts + 1] = format_output(o) end
-    return table.concat(parts, ", ")
-end
-info("c->g redstone   : " .. summarize_outputs(cg_outputs))
-info("g->s redstone   : " .. summarize_outputs(gs_outputs))
-info("polarity        : " .. tostring(polarity))
-info(string.format("critical gate   : open >= %d%%, close <= %d%%", c_open * 100, c_close * 100))
-info(string.format("general  gate   : open >= %d%%, close <= %d%%", g_open * 100, g_close * 100))
-
-print("")
-write("Write this configuration to config.lua? [Y/n]: ")
-local confirm = read()
-if confirm ~= "" and confirm:sub(1,1):lower() == "n" then
-    print("Cancelled. config.lua not modified.")
-    return
-end
-
 if fs.exists("config.lua") then
     if fs.exists("config.lua.bak") then fs.delete("config.lua.bak") end
     fs.copy("config.lua", "config.lua.bak")
-    info("backed up previous config to config.lua.bak")
+    print("backed up previous config to config.lua.bak")
 end
 
 local f = fs.open("config.lua", "w")
 f.write(config_text)
 f.close()
 
-term.setTextColor(colors.lime); print("config.lua written."); term.setTextColor(colors.white)
-print("")
-print("Next: run 'check' to verify, then reboot (or run 'monitor') to start.")
+term.setTextColor(colors.lime)
+print("config.lua written.")
+term.setTextColor(colors.white)
+print("Run 'check' to verify, then reboot (or 'monitor') to start.")

@@ -9,9 +9,11 @@
 --   --no-setup     skip the interactive setup step
 --   --update       used by update.lua (no-op marker; preserves config)
 
-local VERSION = "0.3.0"
+local VERSION = "0.4.0"
 local REPO_BASE = "https://raw.githubusercontent.com/stevej1397/cc_tweaked_induction_matrix_monitor/main/"
 local PIXELBOX_URL = "https://raw.githubusercontent.com/9551-Dev/pixelbox_lite/master/pixelbox_lite.lua"
+local PIXELUI_URL  = "https://raw.githubusercontent.com/Shlomo1412/PixelUI-v2/main/pixelui.lua"
+local SHREKBOX_URL = "https://codeberg.org/ShreksHellraiser/shrekbox/raw/branch/main/shrekbox.lua"
 
 local FILES = {
     "monitor.lua",
@@ -103,14 +105,21 @@ for _, file in ipairs(FILES) do
 end
 
 print("")
-header("[2/3] downloading pixelbox_lite")
-local success, err = download(PIXELBOX_URL, "pixelbox_lite.lua")
-if success then
-    ok("pixelbox_lite.lua")
-else
-    fail("pixelbox_lite.lua  (" .. tostring(err) .. ")")
-    errors = errors + 1
+header("[2/3] downloading external dependencies")
+
+local function download_external(url, dest)
+    local success, err = download(url, dest)
+    if success then
+        ok(dest)
+    else
+        fail(dest .. "  (" .. tostring(err) .. ")")
+        errors = errors + 1
+    end
 end
+
+download_external(PIXELBOX_URL, "pixelbox_lite.lua")  -- still used for the monitor graph
+download_external(PIXELUI_URL,  "pixelui.lua")        -- GUI library for setup wizard
+download_external(SHREKBOX_URL, "shrekbox.lua")       -- pixelui's teletext renderer
 
 print("")
 header("[3/3] config.lua")

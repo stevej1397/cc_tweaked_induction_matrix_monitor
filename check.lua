@@ -126,12 +126,17 @@ end
 check_thresh("critical gate", config.critical_open_at, config.critical_close_at)
 check_thresh("general gate",  config.general_open_at,  config.general_close_at)
 
--- pixelbox_lite
-if fs.exists("pixelbox_lite.lua") or fs.exists("/pixelbox_lite.lua") then
-    ok("pixelbox_lite installed")
-else
-    fail("pixelbox_lite.lua not found - run installer again")
+-- external deps
+local function check_file(label, path, hint)
+    if fs.exists(path) or fs.exists("/" .. path) then
+        ok(label)
+    else
+        fail(label .. " - " .. (hint or ("run 'update' to fetch " .. path)))
+    end
 end
+check_file("pixelbox_lite", "pixelbox_lite.lua")
+check_file("pixelui",       "pixelui.lua", "run 'update' to fetch pixelui.lua")
+check_file("shrekbox",      "shrekbox.lua", "run 'update' to fetch shrekbox.lua (pixelui dep)")
 
 print("")
 term.setTextColor(colors.white)
