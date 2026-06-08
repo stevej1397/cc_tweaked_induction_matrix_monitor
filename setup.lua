@@ -6,7 +6,7 @@
 -- Falls back to a clear error if PixelUI / shrekbox aren't installed yet
 -- (run 'update' to fetch them).
 
-local SETUP_VERSION = "0.4.3"
+local SETUP_VERSION = "0.4.4"
 
 -- Quick version banner so we can tell whether 'update' actually replaced
 -- this file on the computer. If you see this banner, you have at least
@@ -422,40 +422,68 @@ step6:addChild(radioHigh)
 step6:addChild(radioLow)
 
 step6:addChild(mkLabel({
-    x = 2, y = 5, width = STEP6_W, text = "Gate thresholds (open / close):",
+    x = 2, y = 5, width = STEP6_W,
+    text = "Gate thresholds (enter a percent 1-99):",
     fg = colors.white, bg = colors.black,
 }))
 
-local function thresholdRow(y, label, getter, setter)
+-- Threshold inputs. We use TextBox widgets so the user can type a number
+-- directly. The state is read back when Next is clicked (see validateStep).
+local thresholdBoxes = {}
+
+local function thresholdRow(y, key, label, default)
     step6:addChild(mkLabel({
-        x = 2, y = y, width = 14, text = label,
+        x = 2, y = y, width = 16, text = label,
         fg = colors.lightGray, bg = colors.black,
     }))
-    local slider = app:createSlider({
-        x = 16, y = y, width = CONTENT_W - 22,
-        min = 1, max = 99, step = 1, value = getter(),
-        showValue = true,
+    local tb = app:createTextBox({
+        x = 18, y = y, width = 8, height = 1,
+        text = tostring(default),
         bg = colors.gray, fg = colors.white,
-        formatValue = function(self, v) return string.format("%d%%", v) end,
-        onChange = function(self, v) setter(v) end,
+        maxLength = 3,
     })
-    step6:addChild(slider)
+    step6:addChild(tb)
+    step6:addChild(mkLabel({
+        x = 27, y = y, width = 4, text = "%",
+        fg = colors.lightGray, bg = colors.black,
+    }))
+    thresholdBoxes[key] = tb
 end
 
-thresholdRow(6,  "critical open:",  function() return state.critical_open_pct end,
-    function(v) state.critical_open_pct = v end)
-thresholdRow(7,  "critical close:", function() return state.critical_close_pct end,
-    function(v) state.critical_close_pct = v end)
-thresholdRow(8,  "general open:",   function() return state.general_open_pct end,
-    function(v) state.general_open_pct = v end)
-thresholdRow(9,  "general close:",  function() return state.general_close_pct end,
-    function(v) state.general_close_pct = v end)
+thresholdRow(6,  "critical_open",  "critical open:",  state.critical_open_pct)
+thresholdRow(7,  "critical_close", "critical close:", state.critical_close_pct)
+thresholdRow(8,  "general_open",   "general open:",   state.general_open_pct)
+thresholdRow(9,  "general_close",  "general close:",  state.general_close_pct)
 
 step6:addChild(mkLabel({
     x = 2, y = 11, width = STEP6_W,
     text = "(close must be <= open for each gate)",
     fg = colors.gray, bg = colors.black,
 }))
+
+-- Pull TextBox values into state. Returns error string or nil.
+local function readThresholdInputs()
+    local function parse(key)
+        local raw = thresholdBoxes[key]:getText()
+        local n = tonumber(raw)
+        if not n then return nil, "'" .. raw .. "' is not a number" end
+        if n < 1 or n > 99 then return nil, "must be 1-99" end
+        return math.floor(n)
+    end
+    local v, err = parse("critical_open")
+    if not v then return "critical open: " .. err end
+    state.critical_open_pct = v
+    v, err = parse("critical_close")
+    if not v then return "critical close: " .. err end
+    state.critical_close_pct = v
+    v, err = parse("general_open")
+    if not v then return "general open: " .. err end
+    state.general_open_pct = v
+    v, err = parse("general_close")
+    if not v then return "general close: " .. err end
+    state.general_close_pct = v
+    return nil
+end
 
 -- ============================================================
 -- Step 7: confirm & save
@@ -512,6 +540,8 @@ local function validateStep(n)
     end
     if n == 3 and not state.monitor then return "Pick a monitor" end
     if n == 6 then
+        local err = readThresholdInputs()
+        if err then return err end
         if state.critical_close_pct > state.critical_open_pct then
             return "Critical close must be <= critical open"
         end
