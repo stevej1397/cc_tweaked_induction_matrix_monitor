@@ -8,12 +8,18 @@ Power flow expected: `Generators -> Critical Matrix -> General Matrix -> Power S
 
 The computer toggles two redstone signals to gate the flow:
 
-| Gate                  | Opens when      | Closes when     |
-|-----------------------|-----------------|-----------------|
-| Critical -> General   | Critical >= 75% | Critical <= 70% |
-| General  -> Sink      | General  >= 90% | General  <= 85% |
+| Gate                  | Opens when                            | Closes when                          |
+|-----------------------|---------------------------------------|--------------------------------------|
+| Critical -> General   | Critical >= 75%                       | Critical <= 70%                      |
+| General  -> Sink      | General >= 90% **and** Critical >= 75% | General <= 85% **or** Critical <= 70% |
 
 The 5% hysteresis prevents the gates from rapidly flapping on/off.
+
+The Sink gate's compound rule means power never flows to the sink while
+the critical matrix is still drawing -- if Critical drops below 70%, the
+Sink gate slams shut even if General is still over 85%. The on-screen
+gate hint shows *why* a shut Sink gate is shut (`blocked: critical not
+full` vs. `waiting: general < 90%`).
 
 ## Hardware setup
 

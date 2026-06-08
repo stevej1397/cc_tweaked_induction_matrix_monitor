@@ -192,7 +192,7 @@ function M:draw_stats(critical, general, gates)
 
     -- Gates
     local g_start = self.regions.gate_start + 1
-    local function draw_gate(y, label, open, threshold_pct, hyst_pct)
+    local function draw_gate(y, label, open, hint)
         m.setBackgroundColor(colors.black)
         m.setCursorPos(1, y)
         m.write(string.rep(" ", w))
@@ -210,18 +210,37 @@ function M:draw_stats(critical, general, gates)
         end
         m.setTextColor(colors.gray)
         m.setCursorPos(state_x + 10, y)
-        m.write(string.format("open>=%d%%  close<=%d%%", threshold_pct, hyst_pct))
+        m.write(hint or "")
     end
-    draw_gate(g_start,
-        "Critical -> General",
+
+    local c_open_pct  = math.floor((self.cfg.critical_open_at  or 0.75) * 100 + 0.5)
+    local c_close_pct = math.floor((self.cfg.critical_close_at or 0.70) * 100 + 0.5)
+    local g_open_pct  = math.floor((self.cfg.general_open_at   or 0.90) * 100 + 0.5)
+    local g_close_pct = math.floor((self.cfg.general_close_at  or 0.85) * 100 + 0.5)
+
+    draw_gate(g_start, "Critical -> General",
         gates and gates.cg_open or false,
-        math.floor((self.cfg.critical_open_at or 0.75) * 100 + 0.5),
-        math.floor((self.cfg.critical_close_at or 0.70) * 100 + 0.5))
-    draw_gate(g_start + 1,
-        "General  -> Sink   ",
-        gates and gates.gs_open or false,
-        math.floor((self.cfg.general_open_at or 0.90) * 100 + 0.5),
-        math.floor((self.cfg.general_close_at or 0.85) * 100 + 0.5))
+        string.format("open>=%d%%  close<=%d%%", c_open_pct, c_close_pct))
+
+    -- General -> Sink also requires critical to be at threshold. Surface
+    -- the *reason* the gate is shut when we can: blocked-by-critical is
+    -- the most informative thing to see at a glance.
+    local gs_hint
+    if gates and gates.gs_open then
+        gs_hint = string.format("open>=%d%% & critical full", g_open_pct)
+    else
+        local critical_fill = critical and critical.fill or nil
+        local general_fill  = general and general.fill or nil
+        if critical_fill and critical_fill < self.cfg.critical_open_at then
+            gs_hint = "blocked: critical not full"
+        elseif general_fill and general_fill < self.cfg.general_open_at then
+            gs_hint = string.format("waiting: general < %d%%", g_open_pct)
+        else
+            gs_hint = string.format("open>=%d%% close<=%d%%", g_open_pct, g_close_pct)
+        end
+    end
+    draw_gate(g_start + 1, "General  -> Sink   ",
+        gates and gates.gs_open or false, gs_hint)
 
     -- Refresh title bar timestamp
     local ts = textutils.formatTime(os.time(), false)

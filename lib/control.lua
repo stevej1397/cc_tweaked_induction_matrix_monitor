@@ -34,10 +34,29 @@ end
 
 function M:update(critical_fill, general_fill)
     local cfg = self.cfg
+
+    -- Critical -> General: opens when the critical matrix is at threshold.
     self.cg_open = update_gate(self.cg_open, critical_fill,
         cfg.critical_open_at, cfg.critical_close_at)
-    self.gs_open = update_gate(self.gs_open, general_fill,
-        cfg.general_open_at, cfg.general_close_at)
+
+    -- General -> Sink: opens only when BOTH conditions are met --
+    --   general matrix is at its open threshold, AND
+    --   critical matrix is at its open threshold.
+    -- Closes the moment either drops below its close threshold.
+    -- That way we never bleed power to the sink while the critical
+    -- matrix is still drawing.
+    if self.gs_open then
+        if general_fill <= cfg.general_close_at
+           or critical_fill <= cfg.critical_close_at then
+            self.gs_open = false
+        end
+    else
+        if general_fill >= cfg.general_open_at
+           and critical_fill >= cfg.critical_open_at then
+            self.gs_open = true
+        end
+    end
+
     self:apply_redstone()
 end
 
