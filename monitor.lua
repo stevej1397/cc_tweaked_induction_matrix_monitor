@@ -41,8 +41,6 @@ validate_outputs("critical->general", "critical_to_general_outputs", "critical_t
 validate_outputs("general->sink",     "general_to_sink_outputs",     "general_to_sink_side")
 
 local history = History.load(config.history_path, config.history_max_samples)
--- Reset the diagnostic log on each boot so we don't grow forever.
-pcall(fs.delete, "/monitor.log")
 if history.load_error then
     term.setTextColor(colors.yellow)
     print("[monitor] history: " .. history.load_error)
@@ -77,21 +75,6 @@ local function live_tick()
     end
 end
 
--- Append-only log of monitor events. Persists across reboots so we can
--- diagnose problems after the fact ("did history_tick stop firing?").
-local LOG_PATH = "/monitor.log"
-local function logf(fmt, ...)
-    local msg = string.format(fmt, ...)
-    local line = "[" .. os.date("!%Y-%m-%dT%H:%M:%S") .. "] " .. msg
-    print(line)
-    pcall(function()
-        local f = fs.open(LOG_PATH, "a")
-        if f then f.writeLine(line); f.close() end
-    end)
-end
-
-local history_tick_count = 0
-
 local function history_tick()
     local c, g
     if last_sample then
@@ -99,11 +82,7 @@ local function history_tick()
     else
         c, g = read_both()
     end
-    if not (c and g) then
-        logf("history_tick: skip (no matrix data; last_sample=%s)",
-            last_sample and "stale" or "nil")
-        return
-    end
+    if not (c and g) then return end
     history:append({
         t = os.epoch("utc"),
         critical_fill = c.fill,
@@ -113,14 +92,11 @@ local function history_tick()
         general_input = g.input,
         general_output = g.output,
     })
-    history_tick_count = history_tick_count + 1
+    -- Save raises on failure; surface the reason so a silently-broken
+    -- history file (filesystem full, etc.) is visible.
     local ok, err = pcall(history.save, history)
     if not ok then
-        logf("history_tick #%d: SAVE FAILED: %s", history_tick_count, tostring(err))
-    elseif history_tick_count % 10 == 1 then
-        -- Don't spam the log every 30s. Heartbeat every ~5 min instead.
-        logf("history_tick #%d ok: %d samples in buffer",
-            history_tick_count, history:count())
+        print("[history] save failed: " .. tostring(err))
     end
     render:draw_graph(history:get())
 end
