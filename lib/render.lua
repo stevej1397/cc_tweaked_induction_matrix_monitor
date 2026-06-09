@@ -252,21 +252,34 @@ function M:draw_stats(critical, general, gates)
     m.setTextColor(colors.lightGray)
     m.setCursorPos(self.w - #label - 1, 1)
     m.write(label)
+
+    -- Keep the "last sample N seconds ago" counter ticking even between
+    -- history_tick fires, so the user can tell whether sampling has stalled.
+    self:_redraw_graph_header()
 end
 
 function M:draw_graph(samples)
     self.graph:render(samples or {})
     -- Sample count diagnostic next to the graph title. Lets you see at a
     -- glance whether the history buffer is actually accumulating samples.
+    self._last_graph_count = samples and #samples or 0
+    self._last_graph_time = os.epoch("utc")
+    self:_redraw_graph_header()
+end
+
+function M:_redraw_graph_header()
     local m = self.monitor
-    local count = samples and #samples or 0
+    local count = self._last_graph_count or 0
     local maxs = self.cfg.history_max_samples or 1440
     local hours = count * (self.cfg.history_interval or 30) / 3600
-    local txt = string.format(" %d/%d (%.1fh) ", count, maxs, hours)
+    local age_s = self._last_graph_time
+        and math.floor((os.epoch("utc") - self._last_graph_time) / 1000) or 0
+    local txt = string.format(" %d/%d  %.1fh  last:%ds ago ", count, maxs, hours, age_s)
     m.setBackgroundColor(colors.black)
     m.setTextColor(colors.gray)
     m.setCursorPos(24, self.regions.graph_title)
-    m.write(txt)
+    -- Pad to clear any leftover from a previous (possibly longer) string.
+    m.write(txt .. string.rep(" ", math.max(0, 32 - #txt)))
 end
 
 function M:draw_error(msg)

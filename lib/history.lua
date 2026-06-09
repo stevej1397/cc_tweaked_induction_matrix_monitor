@@ -45,14 +45,33 @@ function M:append(sample)
     end
 end
 
+-- Save raises a Lua error on any failure so the caller (history_tick in
+-- monitor.lua) can pcall it and surface the reason. Returning false from
+-- here was too easy to silently ignore.
 function M:save()
     local tmp = self.path .. ".tmp"
-    local f = fs.open(tmp, "w")
-    if not f then return false, "cannot open tmp file" end
-    f.write(textutils.serialize(self.samples))
-    f.close()
-    if fs.exists(self.path) then fs.delete(self.path) end
-    fs.move(tmp, self.path)
+    local f, err = fs.open(tmp, "w")
+    if not f then
+        error("history save: cannot open " .. tmp .. ": " .. tostring(err), 0)
+    end
+    local ok, ser_err = pcall(function()
+        f.write(textutils.serialize(self.samples))
+        f.close()
+    end)
+    if not ok then
+        pcall(function() f.close() end)
+        error("history save: write failed: " .. tostring(ser_err), 0)
+    end
+    if fs.exists(self.path) then
+        local ok_del = pcall(fs.delete, self.path)
+        if not ok_del then
+            error("history save: cannot delete old " .. self.path, 0)
+        end
+    end
+    local ok_mv, mv_err = pcall(fs.move, tmp, self.path)
+    if not ok_mv then
+        error("history save: cannot move tmp to " .. self.path .. ": " .. tostring(mv_err), 0)
+    end
     return true
 end
 
