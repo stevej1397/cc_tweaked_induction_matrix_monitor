@@ -53,4 +53,11 @@ return {
     -- (Mekanism stores power in Joules natively; the others use Mekanism's
     -- default conversion ratios -- 1 FE/RF = 2.5 J, 1 EU = 25 J.)
     energy_unit    = "J",
+
+    -- Rate period:
+    --   "s" - per second (e.g. "1.14 GFE/s") -- multiplies Mekanism's
+    --         per-tick value by 20.
+    --   "t" - per tick   (e.g. "57.1 MFE/t") -- matches the in-game
+    --         Induction Matrix Port GUI exactly.
+    rate_period    = "s",
 }

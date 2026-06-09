@@ -40,6 +40,17 @@ function M.format_rate_per_sec(j_per_tick, unit)
     return M.format_energy(j_per_tick * 20, unit) .. "/s"
 end
 
+-- Format an input/output rate. period = "s" (per second; multiply by 20)
+-- or "t" (per tick; raw Mekanism value -- matches the in-game GUI).
+function M.format_rate(j_per_tick, unit, period)
+    if j_per_tick == nil then return "?" end
+    period = period or "s"
+    if period == "t" then
+        return M.format_energy(j_per_tick, unit) .. "/t"
+    end
+    return M.format_energy(j_per_tick * 20, unit) .. "/s"
+end
+
 function M.format_pct(fill)
     if fill == nil then return "  ?  " end
     return string.format("%5.1f%%", fill * 100)

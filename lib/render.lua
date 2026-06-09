@@ -157,6 +157,7 @@ function M:draw_stats(critical, general, gates)
     local r_start = self.regions.stats_start + 1
 
     local unit = self.cfg.energy_unit or "J"
+    local period = self.cfg.rate_period or "s"
 
     local function side(x0, data, fill_color)
         local row = make_row(m, x0, col_w)
@@ -183,8 +184,8 @@ function M:draw_stats(critical, general, gates)
         m.setCursorPos(x0 + col_w - 1, r_start + 3)
         m.write("]")
 
-        row(r_start + 4, "Input:",  util.format_rate_per_sec(data.input, unit), colors.green)
-        row(r_start + 5, "Output:", util.format_rate_per_sec(data.output, unit), colors.orange)
+        row(r_start + 4, "Input:",  util.format_rate(data.input, unit, period), colors.green)
+        row(r_start + 5, "Output:", util.format_rate(data.output, unit, period), colors.orange)
         row(r_start + 6, "ETA:",    util.format_eta(data.energy, data.max, data.net),
             data.net >= 0 and colors.green or colors.orange)
     end
@@ -255,6 +256,17 @@ end
 
 function M:draw_graph(samples)
     self.graph:render(samples or {})
+    -- Sample count diagnostic next to the graph title. Lets you see at a
+    -- glance whether the history buffer is actually accumulating samples.
+    local m = self.monitor
+    local count = samples and #samples or 0
+    local maxs = self.cfg.history_max_samples or 1440
+    local hours = count * (self.cfg.history_interval or 30) / 3600
+    local txt = string.format(" %d/%d (%.1fh) ", count, maxs, hours)
+    m.setBackgroundColor(colors.black)
+    m.setTextColor(colors.gray)
+    m.setCursorPos(24, self.regions.graph_title)
+    m.write(txt)
 end
 
 function M:draw_error(msg)

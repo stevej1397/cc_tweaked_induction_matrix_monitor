@@ -6,7 +6,7 @@
 -- Falls back to a clear error if PixelUI / shrekbox aren't installed yet
 -- (run 'update' to fetch them).
 
-local SETUP_VERSION = "0.5.0"
+local SETUP_VERSION = "0.5.1"
 
 -- Quick version banner so we can tell whether 'update' actually replaced
 -- this file on the computer. If you see this banner, you have at least
@@ -112,6 +112,7 @@ local state = {
     general_close_pct  = math.floor((existing.general_close_at  or 0.85) * 100 + 0.5),
 
     energy_unit = existing.energy_unit or "J",
+    rate_period = existing.rate_period or "s",
 
     cancelled = false,
     saved = false,
@@ -496,16 +497,25 @@ local step7 = newStepFrame()
 local STEP7_W = CONTENT_W - 4
 
 step7:addChild(mkLabel({
-    x = 2, y = 1, width = STEP7_W,
-    text = "Power unit shown on the monitor:",
+    x = 2, y = 1, width = 18, text = "Power unit:",
     fg = colors.white, bg = colors.black,
 }))
 
 local UNIT_OPTIONS = {
-    {value = "J",  label = "J  - Joules (Mekanism native)"},
+    {value = "J",  label = "J  - Joules"},
     {value = "FE", label = "FE - Forge Energy"},
-    {value = "RF", label = "RF - Redstone Flux (= FE)"},
-    {value = "EU", label = "EU - Industrial Craft 2"},
+    {value = "RF", label = "RF - Redstone Flux"},
+    {value = "EU", label = "EU - IC2 EU"},
+}
+
+step7:addChild(mkLabel({
+    x = 25, y = 1, width = 20, text = "Rate period:",
+    fg = colors.white, bg = colors.black,
+}))
+
+local PERIOD_OPTIONS = {
+    {value = "s", label = "/s  (per second)"},
+    {value = "t", label = "/t  (per tick, matches Mekanism GUI)"},
 }
 
 local unitPreview = mkLabel({
@@ -514,12 +524,14 @@ local unitPreview = mkLabel({
 })
 
 local function refresh_unit_preview()
-    -- 5.20 GJ is a representative induction-matrix capacity.
-    local sample = 5.2e9
+    -- 5.20 GJ is a representative induction-matrix capacity;
+    -- 1.2e6 J/tick = 24 MJ/s is a representative input rate.
+    local cap_sample = 5.2e9
+    local rate_sample = 1.2e6
     unitPreview:setText(string.format(
-        "Preview: %s capacity, %s/s in",
-        util.format_energy(sample, state.energy_unit),
-        util.format_energy(1.2e6, state.energy_unit)))
+        "Preview: %s capacity, %s in",
+        util.format_energy(cap_sample, state.energy_unit),
+        util.format_rate(rate_sample, state.energy_unit, state.rate_period)))
 end
 
 for i, opt in ipairs(UNIT_OPTIONS) do
@@ -536,6 +548,22 @@ for i, opt in ipairs(UNIT_OPTIONS) do
         end,
     }))
 end
+
+for i, opt in ipairs(PERIOD_OPTIONS) do
+    step7:addChild(app:createRadioButton({
+        x = 27, y = 1 + i, label = opt.label,
+        group = "rate_period", value = opt.value,
+        selected = state.rate_period == opt.value,
+        fg = colors.white, bg = colors.black,
+        onChange = function(self, sel)
+            if sel then
+                state.rate_period = opt.value
+                refresh_unit_preview()
+            end
+        end,
+    }))
+end
+
 step7:addChild(unitPreview)
 refresh_unit_preview()
 
@@ -575,7 +603,7 @@ local function refreshSummary()
         state.critical_open_pct, state.critical_close_pct))
     summaryLabels[8]:setText(string.format("General gate    : open >= %d%%, close <= %d%%",
         state.general_open_pct, state.general_close_pct))
-    summaryLabels[9]:setText("Display unit    : " .. tostring(state.energy_unit))
+    summaryLabels[9]:setText("Display         : " .. tostring(state.energy_unit) .. ", rate per " .. (state.rate_period == "t" and "tick" or "second"))
     summaryLabels[10]:setText("")
     summaryLabels[11]:setText("Click Save to write config.lua and exit.")
     summaryLabels[12]:setText("(existing config.lua will be backed up to config.lua.bak)")
@@ -749,6 +777,8 @@ return {
 
     -- "J", "FE", "RF", or "EU"
     energy_unit    = %s,
+    -- "s" (per second) or "t" (per tick, matches Mekanism GUI)
+    rate_period    = %s,
 }
 ]],
     fmt_str(state.critical),
@@ -765,7 +795,8 @@ return {
     existing.history_interval or 30,
     existing.history_max_samples or 1440,
     existing.text_scale or 0.5,
-    fmt_str(state.energy_unit)
+    fmt_str(state.energy_unit),
+    fmt_str(state.rate_period)
 )
 
 if fs.exists("config.lua") then

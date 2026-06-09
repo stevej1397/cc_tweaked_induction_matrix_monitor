@@ -6,13 +6,29 @@ function M.load(path, max_samples)
     self.path = path or "/history.dat"
     self.max = max_samples or 1440
     self.samples = {}
+    self.load_error = nil
+    self.load_status = "no history file yet"
     if fs.exists(self.path) then
         local f = fs.open(self.path, "r")
-        local data = f.readAll()
-        f.close()
-        local ok, decoded = pcall(textutils.unserialize, data)
-        if ok and type(decoded) == "table" then
-            self.samples = decoded
+        if not f then
+            self.load_error = "could not open " .. self.path
+        else
+            local data = f.readAll()
+            f.close()
+            if not data or data == "" then
+                self.load_error = "history file is empty (" .. self.path .. ")"
+            else
+                local ok, decoded = pcall(textutils.unserialize, data)
+                if ok and type(decoded) == "table" then
+                    self.samples = decoded
+                    self.load_status = string.format("loaded %d samples from %s",
+                        #self.samples, self.path)
+                elseif ok then
+                    self.load_error = "history file did not contain a table"
+                else
+                    self.load_error = "unserialize failed: " .. tostring(decoded)
+                end
+            end
         end
     end
     -- Defensive trim in case max shrank

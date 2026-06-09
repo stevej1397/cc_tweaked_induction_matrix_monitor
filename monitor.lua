@@ -41,6 +41,14 @@ validate_outputs("critical->general", "critical_to_general_outputs", "critical_t
 validate_outputs("general->sink",     "general_to_sink_outputs",     "general_to_sink_side")
 
 local history = History.load(config.history_path, config.history_max_samples)
+if history.load_error then
+    term.setTextColor(colors.yellow)
+    print("[monitor] history: " .. history.load_error)
+    print("[monitor] starting with empty history buffer")
+    term.setTextColor(colors.white)
+else
+    print("[monitor] history: " .. (history.load_status or "(?)"))
+end
 local control = Control.new(config)
 local render = Render.new(monitor, config)
 
