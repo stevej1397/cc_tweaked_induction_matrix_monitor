@@ -6,7 +6,7 @@
 -- Falls back to a clear error if PixelUI / shrekbox aren't installed yet
 -- (run 'update' to fetch them).
 
-local SETUP_VERSION = "0.5.1"
+local SETUP_VERSION = "0.6.0"
 
 -- Quick version banner so we can tell whether 'update' actually replaced
 -- this file on the computer. If you see this banner, you have at least
@@ -102,14 +102,18 @@ local state = {
     monitor = existing.monitor,
     cg_outputs = peripherals_lib.compile_outputs(
         existing.critical_to_general_outputs or existing.critical_to_general_side),
+    sps_outputs = peripherals_lib.compile_outputs(
+        existing.general_to_sps_outputs),
     gs_outputs = peripherals_lib.compile_outputs(
         existing.general_to_sink_outputs or existing.general_to_sink_side),
     polarity = existing.gate_signal or "high_opens",
 
-    critical_open_pct  = math.floor((existing.critical_open_at  or 0.75) * 100 + 0.5),
-    critical_close_pct = math.floor((existing.critical_close_at or 0.70) * 100 + 0.5),
-    general_open_pct   = math.floor((existing.general_open_at   or 0.90) * 100 + 0.5),
-    general_close_pct  = math.floor((existing.general_close_at  or 0.85) * 100 + 0.5),
+    critical_open_pct  = math.floor((existing.critical_open_at      or 0.75) * 100 + 0.5),
+    critical_close_pct = math.floor((existing.critical_close_at     or 0.70) * 100 + 0.5),
+    sps_open_pct       = math.floor((existing.general_sps_open_at   or 0.55) * 100 + 0.5),
+    sps_close_pct      = math.floor((existing.general_sps_close_at  or 0.50) * 100 + 0.5),
+    general_open_pct   = math.floor((existing.general_open_at       or 0.95) * 100 + 0.5),
+    general_close_pct  = math.floor((existing.general_close_at      or 0.90) * 100 + 0.5),
 
     energy_unit = existing.energy_unit or "J",
     rate_period = existing.rate_period or "s",
@@ -163,6 +167,7 @@ local STEP_NAMES = {
     "General matrix",
     "Monitor",
     "Critical -> General outputs",
+    "General -> SPS outputs",
     "General -> Sink outputs",
     "Polarity & thresholds",
     "Display unit",
@@ -392,17 +397,19 @@ end
 
 local step4 = buildOutputsStep(4, "Critical -> General gate outputs",
     function() return state.cg_outputs end)
-local step5 = buildOutputsStep(5, "General -> Sink gate outputs",
+local step5 = buildOutputsStep(5, "General -> SPS gate outputs",
+    function() return state.sps_outputs end)
+local step6 = buildOutputsStep(6, "General -> Sink gate outputs",
     function() return state.gs_outputs end)
 
 -- ============================================================
--- Step 6: polarity + thresholds
+-- Step 7: polarity + thresholds (for all three gates)
 -- ============================================================
-local step6 = newStepFrame()
-local STEP6_W = CONTENT_W - 4
+local step7 = newStepFrame()
+local STEP7_W = CONTENT_W - 4
 
-step6:addChild(mkLabel({
-    x = 2, y = 1, width = STEP6_W, text = "Redstone polarity:",
+step7:addChild(mkLabel({
+    x = 2, y = 1, width = STEP7_W, text = "Redstone polarity:",
     fg = colors.white, bg = colors.black,
 }))
 local radioHigh = app:createRadioButton({
@@ -423,45 +430,55 @@ local radioLow = app:createRadioButton({
         if selected then state.polarity = "low_opens" end
     end,
 })
-step6:addChild(radioHigh)
-step6:addChild(radioLow)
+step7:addChild(radioHigh)
+step7:addChild(radioLow)
 
-step6:addChild(mkLabel({
-    x = 2, y = 5, width = STEP6_W,
-    text = "Gate thresholds (enter a percent 1-99):",
+step7:addChild(mkLabel({
+    x = 2, y = 5, width = STEP7_W,
+    text = "Gate thresholds (open / close, 1-99%):",
     fg = colors.white, bg = colors.black,
 }))
 
--- Threshold inputs. We use TextBox widgets so the user can type a number
--- directly. The state is read back when Next is clicked (see validateStep).
+-- Threshold inputs. Pairs of TextBoxes (open / close) on the same row to
+-- keep all six in view at once.
 local thresholdBoxes = {}
 
-local function thresholdRow(y, key, label, default)
-    step6:addChild(mkLabel({
-        x = 2, y = y, width = 16, text = label,
+local function thresholdRow(y, key_open, key_close, label, open_default, close_default)
+    step7:addChild(mkLabel({
+        x = 2, y = y, width = 18, text = label,
         fg = colors.lightGray, bg = colors.black,
     }))
-    local tb = app:createTextBox({
-        x = 18, y = y, width = 8, height = 1,
-        text = tostring(default),
+    local tb_open = app:createTextBox({
+        x = 20, y = y, width = 4, height = 1,
+        text = tostring(open_default),
         bg = colors.gray, fg = colors.white,
         maxLength = 3,
     })
-    step6:addChild(tb)
-    step6:addChild(mkLabel({
-        x = 27, y = y, width = 4, text = "%",
+    step7:addChild(tb_open)
+    step7:addChild(mkLabel({
+        x = 25, y = y, width = 2, text = "/",
         fg = colors.lightGray, bg = colors.black,
     }))
-    thresholdBoxes[key] = tb
+    local tb_close = app:createTextBox({
+        x = 27, y = y, width = 4, height = 1,
+        text = tostring(close_default),
+        bg = colors.gray, fg = colors.white,
+        maxLength = 3,
+    })
+    step7:addChild(tb_close)
+    thresholdBoxes[key_open] = tb_open
+    thresholdBoxes[key_close] = tb_close
 end
 
-thresholdRow(6,  "critical_open",  "critical open:",  state.critical_open_pct)
-thresholdRow(7,  "critical_close", "critical close:", state.critical_close_pct)
-thresholdRow(8,  "general_open",   "general open:",   state.general_open_pct)
-thresholdRow(9,  "general_close",  "general close:",  state.general_close_pct)
+thresholdRow(6, "critical_open", "critical_close",
+    "critical:",        state.critical_open_pct, state.critical_close_pct)
+thresholdRow(7, "sps_open",      "sps_close",
+    "general -> SPS:",  state.sps_open_pct,      state.sps_close_pct)
+thresholdRow(8, "general_open",  "general_close",
+    "general -> sink:", state.general_open_pct,  state.general_close_pct)
 
-step6:addChild(mkLabel({
-    x = 2, y = 11, width = STEP6_W,
+step7:addChild(mkLabel({
+    x = 2, y = 10, width = STEP7_W,
     text = "(close must be <= open for each gate)",
     fg = colors.gray, bg = colors.black,
 }))
@@ -475,28 +492,23 @@ local function readThresholdInputs()
         if n < 1 or n > 99 then return nil, "must be 1-99" end
         return math.floor(n)
     end
-    local v, err = parse("critical_open")
-    if not v then return "critical open: " .. err end
-    state.critical_open_pct = v
-    v, err = parse("critical_close")
-    if not v then return "critical close: " .. err end
-    state.critical_close_pct = v
-    v, err = parse("general_open")
-    if not v then return "general open: " .. err end
-    state.general_open_pct = v
-    v, err = parse("general_close")
-    if not v then return "general close: " .. err end
-    state.general_close_pct = v
+    local v, err
+    v, err = parse("critical_open");  if not v then return "critical open: "  .. err end; state.critical_open_pct  = v
+    v, err = parse("critical_close"); if not v then return "critical close: " .. err end; state.critical_close_pct = v
+    v, err = parse("sps_open");       if not v then return "SPS open: "       .. err end; state.sps_open_pct       = v
+    v, err = parse("sps_close");      if not v then return "SPS close: "      .. err end; state.sps_close_pct      = v
+    v, err = parse("general_open");   if not v then return "sink open: "      .. err end; state.general_open_pct   = v
+    v, err = parse("general_close");  if not v then return "sink close: "     .. err end; state.general_close_pct  = v
     return nil
 end
 
 -- ============================================================
--- Step 7: power unit on the monitor
+-- Step 8: power unit on the monitor
 -- ============================================================
-local step7 = newStepFrame()
-local STEP7_W = CONTENT_W - 4
+local step8 = newStepFrame()
+local STEP8_W = CONTENT_W - 4
 
-step7:addChild(mkLabel({
+step8:addChild(mkLabel({
     x = 2, y = 1, width = 18, text = "Power unit:",
     fg = colors.white, bg = colors.black,
 }))
@@ -508,7 +520,7 @@ local UNIT_OPTIONS = {
     {value = "EU", label = "EU - IC2 EU"},
 }
 
-step7:addChild(mkLabel({
+step8:addChild(mkLabel({
     x = 25, y = 1, width = 20, text = "Rate period:",
     fg = colors.white, bg = colors.black,
 }))
@@ -519,7 +531,7 @@ local PERIOD_OPTIONS = {
 }
 
 local unitPreview = mkLabel({
-    x = 2, y = 8, width = STEP7_W, text = "",
+    x = 2, y = 8, width = STEP8_W, text = "",
     fg = colors.lightGray, bg = colors.black,
 })
 
@@ -535,7 +547,7 @@ local function refresh_unit_preview()
 end
 
 for i, opt in ipairs(UNIT_OPTIONS) do
-    step7:addChild(app:createRadioButton({
+    step8:addChild(app:createRadioButton({
         x = 4, y = 1 + i, label = opt.label,
         group = "energy_unit", value = opt.value,
         selected = state.energy_unit == opt.value,
@@ -550,7 +562,7 @@ for i, opt in ipairs(UNIT_OPTIONS) do
 end
 
 for i, opt in ipairs(PERIOD_OPTIONS) do
-    step7:addChild(app:createRadioButton({
+    step8:addChild(app:createRadioButton({
         x = 27, y = 1 + i, label = opt.label,
         group = "rate_period", value = opt.value,
         selected = state.rate_period == opt.value,
@@ -564,22 +576,22 @@ for i, opt in ipairs(PERIOD_OPTIONS) do
     }))
 end
 
-step7:addChild(unitPreview)
+step8:addChild(unitPreview)
 refresh_unit_preview()
 
 -- ============================================================
--- Step 8: confirm & save
+-- Step 9: confirm & save
 -- ============================================================
-local step8 = newStepFrame()
-local STEP8_W = CONTENT_W - 4
+local step9 = newStepFrame()
+local STEP9_W = CONTENT_W - 4
 
 local summaryLabels = {}
-for i = 1, 12 do
+for i = 1, 14 do
     local l = mkLabel({
-        x = 2, y = i, width = STEP8_W, text = "",
+        x = 2, y = i, width = STEP9_W, text = "",
         fg = colors.white, bg = colors.black,
     })
-    step8:addChild(l)
+    step9:addChild(l)
     summaryLabels[i] = l
 end
 
@@ -597,22 +609,25 @@ local function refreshSummary()
     summaryLabels[2]:setText("General  matrix : " .. tostring(state.general))
     summaryLabels[3]:setText("Monitor         : " .. tostring(state.monitor))
     summaryLabels[4]:setText("C->G outputs    : " .. summarize_outputs(state.cg_outputs))
-    summaryLabels[5]:setText("G->S outputs    : " .. summarize_outputs(state.gs_outputs))
-    summaryLabels[6]:setText("Polarity        : " .. state.polarity)
-    summaryLabels[7]:setText(string.format("Critical gate   : open >= %d%%, close <= %d%%",
+    summaryLabels[5]:setText("G->SPS outputs  : " .. summarize_outputs(state.sps_outputs))
+    summaryLabels[6]:setText("G->Sink outputs : " .. summarize_outputs(state.gs_outputs))
+    summaryLabels[7]:setText("Polarity        : " .. state.polarity)
+    summaryLabels[8]:setText(string.format("critical gate   : open >= %d%%, close <= %d%%",
         state.critical_open_pct, state.critical_close_pct))
-    summaryLabels[8]:setText(string.format("General gate    : open >= %d%%, close <= %d%%",
+    summaryLabels[9]:setText(string.format("general -> SPS  : open >= %d%%, close <= %d%%",
+        state.sps_open_pct, state.sps_close_pct))
+    summaryLabels[10]:setText(string.format("general -> sink : open >= %d%%, close <= %d%%",
         state.general_open_pct, state.general_close_pct))
-    summaryLabels[9]:setText("Display         : " .. tostring(state.energy_unit) .. ", rate per " .. (state.rate_period == "t" and "tick" or "second"))
-    summaryLabels[10]:setText("")
-    summaryLabels[11]:setText("Click Save to write config.lua and exit.")
-    summaryLabels[12]:setText("(existing config.lua will be backed up to config.lua.bak)")
+    summaryLabels[11]:setText("Display         : " .. tostring(state.energy_unit) .. ", rate per " .. (state.rate_period == "t" and "tick" or "second"))
+    summaryLabels[12]:setText("")
+    summaryLabels[13]:setText("Click Save to write config.lua and exit.")
+    summaryLabels[14]:setText("(existing config.lua will be backed up to config.lua.bak)")
 end
 
 -- ============================================================
 -- Step registry + navigation
 -- ============================================================
-local steps = {step1, step2, step3, step4, step5, step6, step7, step8}
+local steps = {step1, step2, step3, step4, step5, step6, step7, step8, step9}
 local currentStep = 1
 
 local function validateStep(n)
@@ -622,14 +637,17 @@ local function validateStep(n)
         if state.general == state.critical then return "General and critical must be different matrices" end
     end
     if n == 3 and not state.monitor then return "Pick a monitor" end
-    if n == 6 then
+    if n == 7 then
         local err = readThresholdInputs()
         if err then return err end
         if state.critical_close_pct > state.critical_open_pct then
             return "Critical close must be <= critical open"
         end
+        if state.sps_close_pct > state.sps_open_pct then
+            return "SPS close must be <= SPS open"
+        end
         if state.general_close_pct > state.general_open_pct then
-            return "General close must be <= general open"
+            return "Sink close must be <= sink open"
         end
     end
     return nil
@@ -757,14 +775,22 @@ return {
     monitor         = %s,
 
     critical_to_general_outputs = %s,
+    general_to_sps_outputs      = %s,
     general_to_sink_outputs     = %s,
 
     gate_signal = %s,
 
-    critical_open_at  = %s,
-    critical_close_at = %s,
-    general_open_at   = %s,
-    general_close_at  = %s,
+    -- Critical gate fires off the critical fill alone.
+    critical_open_at      = %s,
+    critical_close_at     = %s,
+    -- SPS gate is compound: requires general above its threshold AND
+    -- critical above critical_open_at.
+    general_sps_open_at   = %s,
+    general_sps_close_at  = %s,
+    -- Sink gate is also compound. Higher thresholds so it only opens on
+    -- true overflow once the matrices are nearly full.
+    general_open_at       = %s,
+    general_close_at      = %s,
 
     live_interval        = %s,
     history_interval     = %s,
@@ -785,10 +811,13 @@ return {
     fmt_str(state.general),
     fmt_str(state.monitor),
     fmt_outputs(state.cg_outputs),
+    fmt_outputs(state.sps_outputs),
     fmt_outputs(state.gs_outputs),
     fmt_str(state.polarity),
     state.critical_open_pct / 100,
     state.critical_close_pct / 100,
+    state.sps_open_pct / 100,
+    state.sps_close_pct / 100,
     state.general_open_pct / 100,
     state.general_close_pct / 100,
     existing.live_interval or 2,

@@ -38,6 +38,7 @@ local function validate_outputs(label, list_key, legacy_key)
     end
 end
 validate_outputs("critical->general", "critical_to_general_outputs", "critical_to_general_side")
+validate_outputs("general->sps",      "general_to_sps_outputs",      nil)
 validate_outputs("general->sink",     "general_to_sink_outputs",     "general_to_sink_side")
 
 local history = History.load(config.history_path, config.history_max_samples)

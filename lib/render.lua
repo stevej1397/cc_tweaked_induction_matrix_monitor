@@ -216,34 +216,50 @@ function M:draw_stats(critical, general, gates)
         m.write(hint or "")
     end
 
-    local c_open_pct  = math.floor((self.cfg.critical_open_at  or 0.75) * 100 + 0.5)
-    local c_close_pct = math.floor((self.cfg.critical_close_at or 0.70) * 100 + 0.5)
-    local g_open_pct  = math.floor((self.cfg.general_open_at   or 0.90) * 100 + 0.5)
-    local g_close_pct = math.floor((self.cfg.general_close_at  or 0.85) * 100 + 0.5)
+    local c_open_pct   = math.floor((self.cfg.critical_open_at      or 0.75) * 100 + 0.5)
+    local c_close_pct  = math.floor((self.cfg.critical_close_at     or 0.70) * 100 + 0.5)
+    local sp_open_pct  = math.floor((self.cfg.general_sps_open_at   or 0.55) * 100 + 0.5)
+    local sp_close_pct = math.floor((self.cfg.general_sps_close_at  or 0.50) * 100 + 0.5)
+    local g_open_pct   = math.floor((self.cfg.general_open_at       or 0.95) * 100 + 0.5)
+    local g_close_pct  = math.floor((self.cfg.general_close_at      or 0.90) * 100 + 0.5)
 
     draw_gate(g_start, "Critical -> General",
         gates and gates.cg_open or false,
         string.format("open>=%d%%  close<=%d%%", c_open_pct, c_close_pct))
 
-    -- General -> Sink also requires critical to be at threshold. Surface
-    -- the *reason* the gate is shut when we can: blocked-by-critical is
-    -- the most informative thing to see at a glance.
-    local gs_hint
-    if gates and gates.gs_open then
-        gs_hint = string.format("open>=%d%% & critical full", g_open_pct)
-    else
+    -- Compound-gate hint: surface the *reason* the gate is shut so you
+    -- can tell at a glance whether you're waiting on critical or on
+    -- general fill.
+    local function compound_hint(is_open, open_label, gen_open_at, gen_close_at, open_pct, close_pct)
+        if is_open then
+            return string.format("open>=%d%% & critical full", open_pct)
+        end
         local critical_fill = critical and critical.fill or nil
         local general_fill  = general and general.fill or nil
         if critical_fill and critical_fill < self.cfg.critical_open_at then
-            gs_hint = "blocked: critical not full"
-        elseif general_fill and general_fill < self.cfg.general_open_at then
-            gs_hint = string.format("waiting: general < %d%%", g_open_pct)
+            return "blocked: critical not full"
+        elseif general_fill and general_fill < gen_open_at then
+            return string.format("waiting: general < %d%%", open_pct)
         else
-            gs_hint = string.format("open>=%d%% close<=%d%%", g_open_pct, g_close_pct)
+            return string.format("open>=%d%% close<=%d%%", open_pct, close_pct)
         end
     end
-    draw_gate(g_start + 1, "General  -> Sink   ",
-        gates and gates.gs_open or false, gs_hint)
+
+    draw_gate(g_start + 1, "General  -> SPS    ",
+        gates and gates.sps_open or false,
+        compound_hint(gates and gates.sps_open or false,
+            "SPS",
+            self.cfg.general_sps_open_at or 0.55,
+            self.cfg.general_sps_close_at or 0.50,
+            sp_open_pct, sp_close_pct))
+
+    draw_gate(g_start + 2, "General  -> Sink   ",
+        gates and gates.gs_open or false,
+        compound_hint(gates and gates.gs_open or false,
+            "Sink",
+            self.cfg.general_open_at or 0.95,
+            self.cfg.general_close_at or 0.90,
+            g_open_pct, g_close_pct))
 
     -- Refresh title bar timestamp
     local ts = textutils.formatTime(os.time(), false)

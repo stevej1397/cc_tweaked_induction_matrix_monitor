@@ -21,6 +21,9 @@ return {
     critical_to_general_outputs = {
         {peripheral = "computer", side = "left"},
     },
+    general_to_sps_outputs = {
+        {peripheral = "computer", side = "front"},
+    },
     general_to_sink_outputs = {
         {peripheral = "computer", side = "right"},
     },
@@ -33,10 +36,14 @@ return {
 
     -- ---- Gate thresholds (fractions 0..1) ----
     -- Opens when fill >= open_at, closes when fill <= close_at.
-    critical_open_at  = 0.75,
-    critical_close_at = 0.70,
-    general_open_at   = 0.90,
-    general_close_at  = 0.85,
+    -- SPS gate uses lower thresholds than the sink so it gets first claim
+    -- on overflow power once the critical matrix is full.
+    critical_open_at      = 0.75,
+    critical_close_at     = 0.70,
+    general_sps_open_at   = 0.55,
+    general_sps_close_at  = 0.50,
+    general_open_at       = 0.95,
+    general_close_at      = 0.90,
 
     -- ---- Sampling ----
     live_interval        = 2,    -- seconds between live readouts + gate updates

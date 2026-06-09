@@ -108,6 +108,7 @@ local function check_outputs(label, list_key, legacy_key)
     end
 end
 check_outputs("critical -> general", "critical_to_general_outputs", "critical_to_general_side")
+check_outputs("general  -> sps",     "general_to_sps_outputs",     nil)
 check_outputs("general  -> sink",    "general_to_sink_outputs",    "general_to_sink_side")
 
 -- Thresholds
@@ -123,8 +124,9 @@ local function check_thresh(label, open_at, close_at)
             label, open_at * 100, close_at * 100))
     end
 end
-check_thresh("critical gate", config.critical_open_at, config.critical_close_at)
-check_thresh("general gate",  config.general_open_at,  config.general_close_at)
+check_thresh("critical gate",   config.critical_open_at,    config.critical_close_at)
+check_thresh("general->sps",    config.general_sps_open_at, config.general_sps_close_at)
+check_thresh("general->sink",   config.general_open_at,     config.general_close_at)
 
 -- external deps
 local function check_file(label, path, hint)

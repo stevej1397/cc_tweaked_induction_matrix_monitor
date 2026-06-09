@@ -4,22 +4,29 @@ A CC:Tweaked program that displays and controls two Mekanism induction matrices
 (critical + general) and graphs 12 hours of fill history on a 4x3 advanced
 monitor array.
 
-Power flow expected: `Generators -> Critical Matrix -> General Matrix -> Power Sink`.
+Power flow expected:
+`Generators -> Critical Matrix -> General Matrix -> { SPS, Power Sink }`.
 
-The computer toggles two redstone signals to gate the flow:
+The computer toggles three redstone gates:
 
-| Gate                  | Opens when                            | Closes when                          |
-|-----------------------|---------------------------------------|--------------------------------------|
-| Critical -> General   | Critical >= 75%                       | Critical <= 70%                      |
-| General  -> Sink      | General >= 90% **and** Critical >= 75% | General <= 85% **or** Critical <= 70% |
+| Gate                  | Opens when                              | Closes when                            |
+|-----------------------|-----------------------------------------|----------------------------------------|
+| Critical -> General   | Critical >= 75%                         | Critical <= 70%                        |
+| General  -> SPS       | General >= 55% **and** Critical >= 75%  | General <= 50% **or** Critical <= 70%  |
+| General  -> Sink      | General >= 95% **and** Critical >= 75%  | General <= 90% **or** Critical <= 70%  |
 
 The 5% hysteresis prevents the gates from rapidly flapping on/off.
 
-The Sink gate's compound rule means power never flows to the sink while
-the critical matrix is still drawing -- if Critical drops below 70%, the
-Sink gate slams shut even if General is still over 85%. The on-screen
-gate hint shows *why* a shut Sink gate is shut (`blocked: critical not
-full` vs. `waiting: general < 90%`).
+The SPS gate uses lower thresholds than the Sink gate so it gets first
+claim on overflow power. Once the critical matrix is full and the general
+matrix is at 55%+, the SPS starts drawing. Only when general also climbs
+past 95% (true overflow) does the Sink gate open.
+
+Both compound gates close the moment either condition drops below its
+close threshold -- so if Critical drops below 70%, the SPS and Sink gates
+both slam shut, even if General is still well above its own close
+threshold. The on-screen gate hint shows *why* a shut gate is shut
+(`blocked: critical not full` vs. `waiting: general < 95%`).
 
 ## Hardware setup
 
