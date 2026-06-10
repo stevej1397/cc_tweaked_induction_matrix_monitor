@@ -50,11 +50,13 @@ if history.load_error then
 else
     print("[monitor] history: " .. (history.load_status or "(?)"))
 end
+local samples_at_boot = history:count()
+local session_appends = 0
 local control = Control.new(config)
 local render = Render.new(monitor, config)
 
 render:draw_static()
-render:draw_graph(history:get())
+render:draw_graph(history:get(), session_appends)
 
 local last_sample
 
@@ -93,13 +95,14 @@ local function history_tick()
         general_input = g.input,
         general_output = g.output,
     })
+    session_appends = session_appends + 1
     -- Save raises on failure; surface the reason so a silently-broken
     -- history file (filesystem full, etc.) is visible.
     local ok, err = pcall(history.save, history)
     if not ok then
         print("[history] save failed: " .. tostring(err))
     end
-    render:draw_graph(history:get())
+    render:draw_graph(history:get(), session_appends)
 end
 
 -- Initial read so the display isn't empty for the first tick.
@@ -114,7 +117,9 @@ print("[monitor] running. live=" .. (config.live_interval or 2) ..
 print("[monitor] press CTRL+T to terminate")
 
 while true do
-    local event, p1 = os.pullEvent()
+    -- pullEventRaw so the explicit 'terminate' branch below runs instead
+    -- of pullEvent's default behaviour of raising a 'Terminated' error.
+    local event, p1 = os.pullEventRaw()
     if event == "timer" then
         if p1 == live_timer then
             local ok, e = pcall(live_tick)

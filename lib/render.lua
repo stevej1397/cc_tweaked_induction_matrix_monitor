@@ -268,8 +268,18 @@ function M:draw_stats(critical, general, gates)
     m.write(label)
 end
 
-function M:draw_graph(samples)
+function M:draw_graph(samples, session_appends)
     self.graph:render(samples or {})
+    -- Sample counter next to the title so 'is sampling actually running'
+    -- is answerable at a glance. 'session' = appends since last boot.
+    local count = samples and #samples or 0
+    local m = self.monitor
+    local txt = string.format(" %d saved  (+%d this session) ",
+        count, session_appends or 0)
+    m.setBackgroundColor(colors.black)
+    m.setTextColor(colors.gray)
+    m.setCursorPos(24, self.regions.graph_title)
+    m.write(txt)
 end
 
 function M:draw_error(msg)
