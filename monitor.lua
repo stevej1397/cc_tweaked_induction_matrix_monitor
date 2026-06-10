@@ -152,13 +152,22 @@ end
 live_tick()
 history_tick()
 
-local live_timer = os.startTimer(config.live_interval or 2)
-local history_timer = os.startTimer(config.history_interval or 30)
-diag("initial timers armed: live_id=%s history_id=%s",
-    tostring(live_timer), tostring(history_timer))
+-- Single timer drives everything. Empirically, separate
+-- os.startTimer(30) for history was unreliable on this CraftOS
+-- build -- the rearmed long-duration timer just never fired -- while
+-- the short-duration live timer always worked. Counting live ticks
+-- to trigger the history tick sidesteps that completely.
+local TICK_INTERVAL = config.live_interval or 2
+local HISTORY_EVERY = math.max(1,
+    math.floor((config.history_interval or 30) / TICK_INTERVAL))
+local ticks_since_history = 0
+local tick_timer = os.startTimer(TICK_INTERVAL)
+diag("single-timer loop: tick=%ds, history every %d ticks (~%ds)",
+    TICK_INTERVAL, HISTORY_EVERY, HISTORY_EVERY * TICK_INTERVAL)
 
-print("[monitor] running. live=" .. (config.live_interval or 2) ..
-      "s  history=" .. (config.history_interval or 30) .. "s")
+print("[monitor] running. tick=" .. TICK_INTERVAL ..
+      "s  history every " .. HISTORY_EVERY .. " ticks (~" ..
+      (HISTORY_EVERY * TICK_INTERVAL) .. "s)")
 print("[monitor] press CTRL+T to terminate")
 
 while true do
@@ -166,27 +175,25 @@ while true do
     -- of pullEvent's default behaviour of raising a 'Terminated' error.
     local event, p1 = os.pullEventRaw()
     if event == "timer" then
-        if p1 == live_timer then
+        if p1 == tick_timer then
             local ok, e = pcall(live_tick)
             if not ok then
                 print("[live] " .. tostring(e))
                 diag("live_tick ERROR: %s", tostring(e))
             end
-            live_timer = os.startTimer(config.live_interval or 2)
-        elseif p1 == history_timer then
-            diag("HISTORY TIMER FIRED id=%s", tostring(p1))
-            local ok, e = pcall(history_tick)
-            if not ok then
-                print("[history] " .. tostring(e))
-                diag("history_tick ERROR: %s", tostring(e))
+            ticks_since_history = ticks_since_history + 1
+            if ticks_since_history >= HISTORY_EVERY then
+                ticks_since_history = 0
+                local ok2, e2 = pcall(history_tick)
+                if not ok2 then
+                    print("[history] " .. tostring(e2))
+                    diag("history_tick ERROR: %s", tostring(e2))
+                end
             end
-            history_timer = os.startTimer(config.history_interval or 30)
-            diag("history_timer rearmed to id=%s", tostring(history_timer))
+            tick_timer = os.startTimer(TICK_INTERVAL)
         else
-            -- A timer fired that we don't recognise -- log it so we can
-            -- tell whether something is consuming IDs out from under us.
-            diag("unknown timer fired id=%s (live=%s history=%s)",
-                tostring(p1), tostring(live_timer), tostring(history_timer))
+            diag("unknown timer fired id=%s (tick=%s)",
+                tostring(p1), tostring(tick_timer))
         end
     elseif event == "peripheral_detach" then
         print("[monitor] peripheral detached: " .. tostring(p1))
