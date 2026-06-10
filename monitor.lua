@@ -52,11 +52,20 @@ else
 end
 local samples_at_boot = history:count()
 local session_appends = 0
+local session_start_ms = os.epoch("utc")
+
+local function health_status()
+    return {
+        session_start_ms = session_start_ms,
+        samples = history:get(),
+        session_appends = session_appends,
+    }
+end
 local control = Control.new(config)
 local render = Render.new(monitor, config)
 
 render:draw_static()
-render:draw_graph(history:get(), session_appends)
+render:draw_graph(history:get())
 
 local last_sample
 
@@ -70,11 +79,11 @@ local function live_tick()
     local c, g = read_both()
     if c and g then
         control:update(c.fill, g.fill)
-        render:draw_stats(c, g, control:state())
+        render:draw_stats(c, g, control:state(), health_status())
         last_sample = {c = c, g = g}
     else
         -- Read failed: keep gates in current state but make it visible
-        render:draw_stats(c, g, control:state())
+        render:draw_stats(c, g, control:state(), health_status())
     end
 end
 
@@ -102,7 +111,7 @@ local function history_tick()
     if not ok then
         print("[history] save failed: " .. tostring(err))
     end
-    render:draw_graph(history:get(), session_appends)
+    render:draw_graph(history:get())
 end
 
 -- Initial read so the display isn't empty for the first tick.

@@ -146,7 +146,7 @@ local function make_row(m, x0, col_w)
     end
 end
 
-function M:draw_stats(critical, general, gates)
+function M:draw_stats(critical, general, gates, status)
     local m = self.monitor
     local w = self.w
     local mid = math.floor(w / 2)
@@ -266,20 +266,67 @@ function M:draw_stats(critical, general, gates)
     m.setTextColor(colors.lightGray)
     m.setCursorPos(self.w - #label - 1, 1)
     m.write(label)
+
+    -- Refresh the warmup/alert indicator every live tick (every 2 s)
+    -- so a stuck sampler shows up within seconds of going bad.
+    self:_draw_health(status)
 end
 
-function M:draw_graph(samples, session_appends)
+function M:draw_graph(samples)
     self.graph:render(samples or {})
-    -- Sample counter next to the title so 'is sampling actually running'
-    -- is answerable at a glance. 'session' = appends since last boot.
-    local count = samples and #samples or 0
+end
+
+-- Sample health indicator. Lives in the graph title row, immediately
+-- after "12-HOUR FILL HISTORY". Quiet by default; visible only during
+-- the first 5 minutes after boot (warmup) and when the sampling rate
+-- has dropped below 8 samples in the trailing 5-minute window.
+local HEALTH_X = 24
+local HEALTH_W = 12
+local HEALTH_WARMUP_MS  = 5 * 60 * 1000   -- 5 minutes
+local HEALTH_WINDOW_MS  = 5 * 60 * 1000   -- 5 minutes
+local HEALTH_MIN_SAMPLES = 8              -- expected 10/window at 30s
+
+function M:_draw_health(status)
+    if not status or not status.session_start_ms then return end
     local m = self.monitor
-    local txt = string.format(" %d saved  (+%d this session) ",
-        count, session_appends or 0)
+
+    -- Always clear our slot before drawing -- alert state changes need
+    -- to wipe stale text.
     m.setBackgroundColor(colors.black)
-    m.setTextColor(colors.gray)
-    m.setCursorPos(24, self.regions.graph_title)
-    m.write(txt)
+    m.setCursorPos(HEALTH_X, self.regions.graph_title)
+    m.write(string.rep(" ", HEALTH_W))
+
+    local now = os.epoch("utc")
+    local uptime_ms = now - status.session_start_ms
+
+    if uptime_ms < HEALTH_WARMUP_MS then
+        m.setTextColor(colors.gray)
+        m.setCursorPos(HEALTH_X, self.regions.graph_title)
+        m.write(" starting   ")
+        return
+    end
+
+    -- After warmup, count samples whose timestamp falls inside the
+    -- trailing 5-minute window. Scan from the newest backwards and stop
+    -- at the first sample older than the cutoff (samples are in order).
+    local cutoff = now - HEALTH_WINDOW_MS
+    local recent = 0
+    if status.samples then
+        for i = #status.samples, math.max(1, #status.samples - 30), -1 do
+            local t = status.samples[i].t
+            if t and t >= cutoff then
+                recent = recent + 1
+            else
+                break
+            end
+        end
+    end
+
+    if recent < HEALTH_MIN_SAMPLES then
+        m.setTextColor(colors.red)
+        m.setCursorPos(HEALTH_X, self.regions.graph_title)
+        m.write(string.format(" STUCK %d/5m ", recent))
+    end
 end
 
 function M:draw_error(msg)
