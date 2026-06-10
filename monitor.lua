@@ -54,28 +54,6 @@ local samples_at_boot = history:count()
 local session_appends = 0
 local session_start_ms = os.epoch("utc")
 
--- ============================================================
--- Temporary diagnostic log. Records every history_tick fire +
--- timer-id transition so we can tell whether the stuck-at-N bug
--- is the timer never re-firing or history_tick returning early.
--- Lives at /monitor.diag.log, reset each boot. Remove later.
--- ============================================================
-local DIAG_PATH = "/monitor.diag.log"
-pcall(fs.delete, DIAG_PATH)
-local function diag(fmt, ...)
-    local ok, msg = pcall(string.format, fmt, ...)
-    if not ok then msg = tostring(fmt) end
-    local line = string.format("[%s | t=%.1fs] %s",
-        os.date("!%T"), (os.epoch("utc") - session_start_ms) / 1000, msg)
-    pcall(function()
-        local f = fs.open(DIAG_PATH, "a")
-        if f then f.writeLine(line); f.close() end
-    end)
-end
-diag("=== boot. loaded=%d  live_int=%s  hist_int=%s ===",
-    samples_at_boot,
-    tostring(config.live_interval or 2),
-    tostring(config.history_interval or 30))
 
 local function health_status()
     return {
@@ -111,18 +89,13 @@ local function live_tick()
 end
 
 local function history_tick()
-    diag("history_tick enter (last_sample=%s)", last_sample and "set" or "nil")
     local c, g
     if last_sample then
         c, g = last_sample.c, last_sample.g
     else
         c, g = read_both()
     end
-    if not (c and g) then
-        diag("history_tick SKIP (c=%s g=%s)",
-            c and "ok" or "nil", g and "ok" or "nil")
-        return
-    end
+    if not (c and g) then return end
     history:append({
         t = os.epoch("utc"),
         critical_fill = c.fill,
@@ -133,41 +106,33 @@ local function history_tick()
         general_output = g.output,
     })
     session_appends = session_appends + 1
-    diag("history_tick appended; session_appends=%d total=%d",
-        session_appends, history:count())
-    local t0 = os.epoch("utc")
     local ok, err = pcall(history.save, history)
-    local elapsed = (os.epoch("utc") - t0) / 1000
     if not ok then
-        diag("history_tick SAVE FAILED after %.2fs: %s", elapsed, tostring(err))
         print("[history] save failed: " .. tostring(err))
-    else
-        diag("history_tick save ok (%.2fs)", elapsed)
     end
     render:draw_graph(history:get())
-    diag("history_tick complete")
 end
 
 -- Initial read so the display isn't empty for the first tick.
 live_tick()
 history_tick()
 
--- Single timer drives everything. Empirically, separate
--- os.startTimer(30) for history was unreliable on this CraftOS
--- build -- the rearmed long-duration timer just never fired -- while
--- the short-duration live timer always worked. Counting live ticks
--- to trigger the history tick sidesteps that completely.
+-- Single timer drives everything. Separate os.startTimer(30) for
+-- history was unreliable on CraftOS 1.9 +MBS (the rearmed long-
+-- duration timer just never fired), while the short-duration live
+-- timer always worked. We rearm a single 2-second timer in a loop
+-- and fire history_tick whenever wall-clock has advanced past the
+-- next history deadline. Using epoch-time deadlines (rather than
+-- counting ticks) keeps the history cadence locked to the configured
+-- interval even when each live tick takes longer than its nominal
+-- duration to process.
 local TICK_INTERVAL = config.live_interval or 2
-local HISTORY_EVERY = math.max(1,
-    math.floor((config.history_interval or 30) / TICK_INTERVAL))
-local ticks_since_history = 0
+local HISTORY_INTERVAL_MS = (config.history_interval or 30) * 1000
+local next_history_at_ms = os.epoch("utc") + HISTORY_INTERVAL_MS
 local tick_timer = os.startTimer(TICK_INTERVAL)
-diag("single-timer loop: tick=%ds, history every %d ticks (~%ds)",
-    TICK_INTERVAL, HISTORY_EVERY, HISTORY_EVERY * TICK_INTERVAL)
 
 print("[monitor] running. tick=" .. TICK_INTERVAL ..
-      "s  history every " .. HISTORY_EVERY .. " ticks (~" ..
-      (HISTORY_EVERY * TICK_INTERVAL) .. "s)")
+      "s  history=" .. (config.history_interval or 30) .. "s")
 print("[monitor] press CTRL+T to terminate")
 
 while true do
@@ -177,32 +142,28 @@ while true do
     if event == "timer" then
         if p1 == tick_timer then
             local ok, e = pcall(live_tick)
-            if not ok then
-                print("[live] " .. tostring(e))
-                diag("live_tick ERROR: %s", tostring(e))
-            end
-            ticks_since_history = ticks_since_history + 1
-            if ticks_since_history >= HISTORY_EVERY then
-                ticks_since_history = 0
+            if not ok then print("[live] " .. tostring(e)) end
+
+            local now_ms = os.epoch("utc")
+            if now_ms >= next_history_at_ms then
                 local ok2, e2 = pcall(history_tick)
-                if not ok2 then
-                    print("[history] " .. tostring(e2))
-                    diag("history_tick ERROR: %s", tostring(e2))
+                if not ok2 then print("[history] " .. tostring(e2)) end
+                next_history_at_ms = next_history_at_ms + HISTORY_INTERVAL_MS
+                -- If we'd somehow fallen far behind (e.g. paused for
+                -- minutes), don't burst-fire every missed sample on
+                -- recovery -- just resume from now.
+                if next_history_at_ms < now_ms then
+                    next_history_at_ms = now_ms + HISTORY_INTERVAL_MS
                 end
             end
+
             tick_timer = os.startTimer(TICK_INTERVAL)
-        else
-            diag("unknown timer fired id=%s (tick=%s)",
-                tostring(p1), tostring(tick_timer))
         end
     elseif event == "peripheral_detach" then
         print("[monitor] peripheral detached: " .. tostring(p1))
-        diag("peripheral_detach %s", tostring(p1))
     elseif event == "peripheral" then
         print("[monitor] peripheral attached: " .. tostring(p1))
-        diag("peripheral_attach %s", tostring(p1))
     elseif event == "terminate" then
-        diag("terminate event received")
         -- Be safe on terminate: close gates so power doesn't keep flowing past critical.
         control:close_all()
         monitor.setBackgroundColor(colors.black)
