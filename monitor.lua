@@ -54,6 +54,29 @@ local samples_at_boot = history:count()
 local session_appends = 0
 local session_start_ms = os.epoch("utc")
 
+-- ============================================================
+-- Temporary diagnostic log. Records every history_tick fire +
+-- timer-id transition so we can tell whether the stuck-at-N bug
+-- is the timer never re-firing or history_tick returning early.
+-- Lives at /monitor.diag.log, reset each boot. Remove later.
+-- ============================================================
+local DIAG_PATH = "/monitor.diag.log"
+pcall(fs.delete, DIAG_PATH)
+local function diag(fmt, ...)
+    local ok, msg = pcall(string.format, fmt, ...)
+    if not ok then msg = tostring(fmt) end
+    local line = string.format("[%s | t=%.1fs] %s",
+        os.date("!%T"), (os.epoch("utc") - session_start_ms) / 1000, msg)
+    pcall(function()
+        local f = fs.open(DIAG_PATH, "a")
+        if f then f.writeLine(line); f.close() end
+    end)
+end
+diag("=== boot. loaded=%d  live_int=%s  hist_int=%s ===",
+    samples_at_boot,
+    tostring(config.live_interval or 2),
+    tostring(config.history_interval or 30))
+
 local function health_status()
     return {
         session_start_ms = session_start_ms,
@@ -88,13 +111,18 @@ local function live_tick()
 end
 
 local function history_tick()
+    diag("history_tick enter (last_sample=%s)", last_sample and "set" or "nil")
     local c, g
     if last_sample then
         c, g = last_sample.c, last_sample.g
     else
         c, g = read_both()
     end
-    if not (c and g) then return end
+    if not (c and g) then
+        diag("history_tick SKIP (c=%s g=%s)",
+            c and "ok" or "nil", g and "ok" or "nil")
+        return
+    end
     history:append({
         t = os.epoch("utc"),
         critical_fill = c.fill,
@@ -105,13 +133,19 @@ local function history_tick()
         general_output = g.output,
     })
     session_appends = session_appends + 1
-    -- Save raises on failure; surface the reason so a silently-broken
-    -- history file (filesystem full, etc.) is visible.
+    diag("history_tick appended; session_appends=%d total=%d",
+        session_appends, history:count())
+    local t0 = os.epoch("utc")
     local ok, err = pcall(history.save, history)
+    local elapsed = (os.epoch("utc") - t0) / 1000
     if not ok then
+        diag("history_tick SAVE FAILED after %.2fs: %s", elapsed, tostring(err))
         print("[history] save failed: " .. tostring(err))
+    else
+        diag("history_tick save ok (%.2fs)", elapsed)
     end
     render:draw_graph(history:get())
+    diag("history_tick complete")
 end
 
 -- Initial read so the display isn't empty for the first tick.
@@ -120,6 +154,8 @@ history_tick()
 
 local live_timer = os.startTimer(config.live_interval or 2)
 local history_timer = os.startTimer(config.history_interval or 30)
+diag("initial timers armed: live_id=%s history_id=%s",
+    tostring(live_timer), tostring(history_timer))
 
 print("[monitor] running. live=" .. (config.live_interval or 2) ..
       "s  history=" .. (config.history_interval or 30) .. "s")
@@ -132,18 +168,34 @@ while true do
     if event == "timer" then
         if p1 == live_timer then
             local ok, e = pcall(live_tick)
-            if not ok then print("[live] " .. tostring(e)) end
+            if not ok then
+                print("[live] " .. tostring(e))
+                diag("live_tick ERROR: %s", tostring(e))
+            end
             live_timer = os.startTimer(config.live_interval or 2)
         elseif p1 == history_timer then
+            diag("HISTORY TIMER FIRED id=%s", tostring(p1))
             local ok, e = pcall(history_tick)
-            if not ok then print("[history] " .. tostring(e)) end
+            if not ok then
+                print("[history] " .. tostring(e))
+                diag("history_tick ERROR: %s", tostring(e))
+            end
             history_timer = os.startTimer(config.history_interval or 30)
+            diag("history_timer rearmed to id=%s", tostring(history_timer))
+        else
+            -- A timer fired that we don't recognise -- log it so we can
+            -- tell whether something is consuming IDs out from under us.
+            diag("unknown timer fired id=%s (live=%s history=%s)",
+                tostring(p1), tostring(live_timer), tostring(history_timer))
         end
     elseif event == "peripheral_detach" then
         print("[monitor] peripheral detached: " .. tostring(p1))
+        diag("peripheral_detach %s", tostring(p1))
     elseif event == "peripheral" then
         print("[monitor] peripheral attached: " .. tostring(p1))
+        diag("peripheral_attach %s", tostring(p1))
     elseif event == "terminate" then
+        diag("terminate event received")
         -- Be safe on terminate: close gates so power doesn't keep flowing past critical.
         control:close_all()
         monitor.setBackgroundColor(colors.black)
