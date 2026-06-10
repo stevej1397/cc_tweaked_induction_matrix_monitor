@@ -36,8 +36,11 @@ return {
 
     -- ---- Gate thresholds (fractions 0..1) ----
     -- Opens when fill >= open_at, closes when fill <= close_at.
-    -- SPS gate uses lower thresholds than the sink so it gets first claim
-    -- on overflow power once the critical matrix is full.
+    -- Critical gate: simple -- fires off the critical fill alone.
+    -- SPS gate    : simple -- fires off the general fill alone (treated
+    --               as a regular consumer, not an overflow).
+    -- Sink gate   : compound -- requires general fill AND critical fill
+    --               both at threshold; closes if either drops.
     critical_open_at      = 0.75,
     critical_close_at     = 0.70,
     general_sps_open_at   = 0.55,

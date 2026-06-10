@@ -63,15 +63,15 @@ function M:update(critical_fill, general_fill)
     self.cg_open = update_simple_gate(self.cg_open, critical_fill,
         cfg.critical_open_at, cfg.critical_close_at)
 
-    -- General -> SPS: compound. SPS gets first claim on overflow power
-    -- (lower threshold than the sink), so the matrices stay primed.
-    self.sps_open = update_compound_gate(self.sps_open,
-        general_fill, critical_fill,
-        cfg.general_sps_open_at, cfg.general_sps_close_at,
-        cfg.critical_open_at,    cfg.critical_close_at)
+    -- General -> SPS: simple. SPS is treated as a useful consumer (not a
+    -- waste path), so we feed it whenever the general matrix has enough
+    -- buffer -- no critical-fill dependency.
+    self.sps_open = update_simple_gate(self.sps_open, general_fill,
+        cfg.general_sps_open_at, cfg.general_sps_close_at)
 
     -- General -> Sink: compound. Sink only opens when the general matrix
-    -- is very full -- a true overflow.
+    -- is very full AND the critical matrix is also topped up -- a true
+    -- overflow path that we never want to dump into prematurely.
     self.gs_open = update_compound_gate(self.gs_open,
         general_fill, critical_fill,
         cfg.general_open_at, cfg.general_close_at,

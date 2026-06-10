@@ -12,21 +12,18 @@ The computer toggles three redstone gates:
 | Gate                  | Opens when                              | Closes when                            |
 |-----------------------|-----------------------------------------|----------------------------------------|
 | Critical -> General   | Critical >= 75%                         | Critical <= 70%                        |
-| General  -> SPS       | General >= 55% **and** Critical >= 75%  | General <= 50% **or** Critical <= 70%  |
+| General  -> SPS       | General >= 55%                          | General <= 50%                         |
 | General  -> Sink      | General >= 95% **and** Critical >= 75%  | General <= 90% **or** Critical <= 70%  |
 
 The 5% hysteresis prevents the gates from rapidly flapping on/off.
 
-The SPS gate uses lower thresholds than the Sink gate so it gets first
-claim on overflow power. Once the critical matrix is full and the general
-matrix is at 55%+, the SPS starts drawing. Only when general also climbs
-past 95% (true overflow) does the Sink gate open.
-
-Both compound gates close the moment either condition drops below its
-close threshold -- so if Critical drops below 70%, the SPS and Sink gates
-both slam shut, even if General is still well above its own close
-threshold. The on-screen gate hint shows *why* a shut gate is shut
-(`blocked: critical not full` vs. `waiting: general < 95%`).
+The SPS gate is treated as a normal consumer -- it draws whenever the
+general matrix has 55%+ buffer, regardless of critical-matrix state.
+The Sink gate is the dedicated overflow path: it only opens when general
+is *also* nearly full AND critical is at its open threshold, then slams
+shut the moment either drops below its own close threshold. The on-screen
+gate hint shows *why* a shut Sink gate is shut (`blocked: critical not
+full` vs. `waiting: general < 95%`).
 
 ## Hardware setup
 

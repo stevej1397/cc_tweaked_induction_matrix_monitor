@@ -24,21 +24,46 @@ function M.find_monitor(name)
     return p
 end
 
+-- Newer Mekanism returns matrix energy values via the CC bridge as STRINGS
+-- (BigDecimal -> string) so very large capacities don't lose precision.
+-- Force everything through tonumber() before arithmetic so we don't crash
+-- with 'attempt to perform arithmetic on a string value' the moment the
+-- matrix holds something like 1.32e14 J.
+local function as_number(v)
+    if type(v) == "number" then return v end
+    if type(v) == "string" then return tonumber(v) end
+    return nil
+end
+
 function M.read_matrix(p)
     if not p then return nil, "matrix not wrapped" end
-    local ok, energy = pcall(p.getEnergy)
-    if not ok or not energy then return nil, "getEnergy failed" end
-    local ok2, max = pcall(p.getMaxEnergy)
-    if not ok2 or not max or max <= 0 then return nil, "getMaxEnergy failed" end
-    local _, input = pcall(p.getLastInput)
-    local _, output = pcall(p.getLastOutput)
+
+    local ok, raw_energy = pcall(p.getEnergy)
+    if not ok or raw_energy == nil then return nil, "getEnergy failed" end
+    local energy = as_number(raw_energy)
+    if not energy then
+        return nil, "getEnergy returned non-numeric value (" .. tostring(raw_energy) .. ")"
+    end
+
+    local ok2, raw_max = pcall(p.getMaxEnergy)
+    if not ok2 or raw_max == nil then return nil, "getMaxEnergy failed" end
+    local max = as_number(raw_max)
+    if not max or max <= 0 then
+        return nil, "getMaxEnergy returned non-numeric or zero (" .. tostring(raw_max) .. ")"
+    end
+
+    local _, raw_input  = pcall(p.getLastInput)
+    local _, raw_output = pcall(p.getLastOutput)
+    local input  = as_number(raw_input)  or 0
+    local output = as_number(raw_output) or 0
+
     return {
         energy = energy,
         max = max,
         fill = energy / max,
-        input = input or 0,
-        output = output or 0,
-        net = (input or 0) - (output or 0),
+        input = input,
+        output = output,
+        net = input - output,
     }
 end
 

@@ -245,14 +245,12 @@ function M:draw_stats(critical, general, gates)
         end
     end
 
+    -- SPS is a simple gate -- only depends on general fill.
     draw_gate(g_start + 1, "General  -> SPS    ",
         gates and gates.sps_open or false,
-        compound_hint(gates and gates.sps_open or false,
-            "SPS",
-            self.cfg.general_sps_open_at or 0.55,
-            self.cfg.general_sps_close_at or 0.50,
-            sp_open_pct, sp_close_pct))
+        string.format("open>=%d%%  close<=%d%%", sp_open_pct, sp_close_pct))
 
+    -- Sink is compound -- depends on general fill AND critical fill.
     draw_gate(g_start + 2, "General  -> Sink   ",
         gates and gates.gs_open or false,
         compound_hint(gates and gates.gs_open or false,
